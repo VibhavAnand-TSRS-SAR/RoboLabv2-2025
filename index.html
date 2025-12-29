@@ -14,69 +14,157 @@
         .scroller::-webkit-scrollbar { width: 8px; height: 8px; }
         .scroller::-webkit-scrollbar-thumb { background-color: #CBD5E1; border-radius: 4px; }
         .scroller::-webkit-scrollbar-track { background-color: #F1F5F9; }
+        
+        /* Auth Screen Background */
+        .auth-bg {
+            background-color: #111827;
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(59, 130, 246, 0.3) 0px, transparent 50%),
+                radial-gradient(at 100% 0%, rgba(16, 185, 129, 0.3) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(239, 68, 68, 0.3) 0px, transparent 50%),
+                radial-gradient(at 0% 100%, rgba(139, 92, 246, 0.3) 0px, transparent 50%);
+        }
     </style>
 </head>
-<body class="bg-gray-100 h-screen flex overflow-hidden">
+<body class="bg-gray-100 h-screen overflow-hidden">
 
-    <!-- Mobile Overlay -->
-    <div id="sidebarOverlay" onclick="toggleSidebar()" class="fixed inset-0 bg-black/50 z-20 hidden lg:hidden glass"></div>
-
-    <!-- Sidebar -->
-    <aside class="fixed inset-y-0 left-0 w-64 bg-gray-900 text-white flex flex-col z-30 transform -translate-x-full lg:translate-x-0 lg:static lg:flex-shrink-0 transition-transform duration-300 shadow-xl" id="sidebar">
-        <div class="p-6 flex items-center justify-between border-b border-gray-800">
-            <div class="flex items-center gap-3">
-                <i class="fa-solid fa-robot text-blue-500 text-2xl"></i>
-                <h1 class="text-xl font-bold tracking-wider">RoboLab</h1>
+    <!-- LOGIN SCREEN -->
+    <div id="login-view" class="fixed inset-0 z-50 flex items-center justify-center auth-bg">
+        <div class="bg-white/10 backdrop-blur-lg border border-white/20 p-8 rounded-2xl shadow-2xl w-full max-w-md">
+            <div class="text-center mb-8">
+                <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-blue-600 text-white mb-4 shadow-lg">
+                    <i class="fa-solid fa-robot text-3xl"></i>
+                </div>
+                <h1 class="text-3xl font-bold text-white tracking-tight">RoboLab Login</h1>
+                <p class="text-blue-200 text-sm mt-2">Inventory Management System</p>
             </div>
-            <!-- Mobile Close Button -->
-            <button onclick="toggleSidebar()" class="lg:hidden text-gray-400 hover:text-white">
-                <i class="fa-solid fa-times text-xl"></i>
-            </button>
-        </div>
-        <nav class="flex-1 mt-6 px-2 space-y-2">
-            <a href="#" onclick="renderView('dashboard')" id="nav-dashboard" class="sidebar-link flex items-center gap-3 px-4 py-3 text-gray-300 hover:bg-gray-800 hover:text-white rounded-md transition-colors active">
-                <i class="fa-solid fa-chart-line w-5"></i> Dashboard
-            </a>
-            <a href="#" onclick="renderView('inventory')" id="nav-inventory" class="sidebar-link flex items-center gap-3 px-4 py-3 text-gray-300 hover:bg-gray-800 hover:text-white rounded-md transition-colors">
-                <i class="fa-solid fa-boxes-stacked w-5"></i> Inventory
-            </a>
-            <a href="#" onclick="renderView('reports')" id="nav-reports" class="sidebar-link flex items-center gap-3 px-4 py-3 text-gray-300 hover:bg-gray-800 hover:text-white rounded-md transition-colors">
-                <i class="fa-solid fa-file-invoice w-5"></i> Reports
-            </a>
-            <a href="#" onclick="renderView('shopping')" id="nav-shopping" class="sidebar-link flex items-center gap-3 px-4 py-3 text-gray-300 hover:bg-gray-800 hover:text-white rounded-md transition-colors">
-                <i class="fa-solid fa-cart-shopping w-5"></i> Shopping List
-            </a>
-        </nav>
-        <div class="p-4 border-t border-gray-800 text-xs text-gray-500 text-center">
-            School Robotics Lab v1.0
-        </div>
-    </aside>
+            
+            <form onsubmit="handleLogin(event)" class="space-y-6">
+                <div>
+                    <label class="block text-sm font-medium text-blue-100 mb-1">Employee ID</label>
+                    <div class="relative">
+                        <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-blue-300">
+                            <i class="fa-solid fa-id-card"></i>
+                        </span>
+                        <input type="text" id="loginId" required class="pl-10 w-full bg-gray-900/50 border border-gray-600 text-white rounded-lg px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all placeholder-gray-500" placeholder="Enter Employee ID">
+                    </div>
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-blue-100 mb-1">Password</label>
+                    <div class="relative">
+                        <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-blue-300">
+                            <i class="fa-solid fa-lock"></i>
+                        </span>
+                        <input type="password" id="loginPassword" required class="pl-10 w-full bg-gray-900/50 border border-gray-600 text-white rounded-lg px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all placeholder-gray-500" placeholder="••••••••">
+                    </div>
+                </div>
 
-    <!-- Main Content -->
-    <main class="flex-1 flex flex-col overflow-hidden relative w-full">
-        <!-- Header -->
-        <header class="bg-white shadow-sm h-16 flex items-center justify-between px-4 sm:px-6 z-10">
-            <div class="flex items-center gap-4">
-                <button onclick="toggleSidebar()" class="lg:hidden text-gray-500 hover:text-gray-700 focus:outline-none">
-                    <i class="fa-solid fa-bars text-xl"></i>
+                <div id="loginError" class="hidden text-red-400 text-sm text-center bg-red-900/20 py-2 rounded-lg border border-red-500/30">
+                    Invalid credentials
+                </div>
+                
+                <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg shadow-lg hover:shadow-blue-500/30 transition-all transform hover:-translate-y-0.5">
+                    Sign In
                 </button>
-                <h2 id="page-title" class="text-xl sm:text-2xl font-semibold text-gray-800 truncate">Dashboard</h2>
+            </form>
+            <div class="mt-6 text-center text-xs text-gray-400">
+                <p>Default Admin: admin / admin123</p>
+                <p>Default Assistant: assistant / 123</p>
             </div>
-            <div class="flex items-center gap-4">
-                <button onclick="openModal('addItemModal')" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 sm:px-4 sm:py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors whitespace-nowrap">
-                    <i class="fa-solid fa-plus"></i> <span class="hidden sm:inline">Add New Item</span>
+        </div>
+    </div>
+
+    <!-- MAIN APP LAYOUT -->
+    <div id="app-view" class="hidden h-screen flex overflow-hidden">
+        
+        <!-- Mobile Overlay -->
+        <div id="sidebarOverlay" onclick="toggleSidebar()" class="fixed inset-0 bg-black/50 z-20 hidden lg:hidden glass"></div>
+
+        <!-- Sidebar -->
+        <aside class="fixed inset-y-0 left-0 w-64 bg-gray-900 text-white flex flex-col z-30 transform -translate-x-full lg:translate-x-0 lg:static lg:flex-shrink-0 transition-transform duration-300 shadow-xl" id="sidebar">
+            <div class="p-6 flex items-center justify-between border-b border-gray-800">
+                <div class="flex items-center gap-3">
+                    <i class="fa-solid fa-robot text-blue-500 text-2xl"></i>
+                    <h1 class="text-xl font-bold tracking-wider">RoboLab</h1>
+                </div>
+                <button onclick="toggleSidebar()" class="lg:hidden text-gray-400 hover:text-white">
+                    <i class="fa-solid fa-times text-xl"></i>
                 </button>
             </div>
-        </header>
+            
+            <!-- User Info Sidebar Widget -->
+            <div class="p-4 border-b border-gray-800 bg-gray-800/50">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-lg" id="sidebarUserInitials">
+                        AD
+                    </div>
+                    <div class="overflow-hidden">
+                        <p class="text-sm font-medium text-white truncate" id="sidebarUserName">Admin User</p>
+                        <p class="text-xs text-gray-400 truncate capitalize" id="sidebarUserRole">Administrator</p>
+                    </div>
+                </div>
+            </div>
 
-        <!-- Content Area -->
-        <div id="content-area" class="flex-1 overflow-auto p-6 relative scroller">
-            <!-- Dynamic Content Will Be Injected Here -->
-        </div>
-    </main>
+            <nav class="flex-1 mt-4 px-2 space-y-2 overflow-y-auto scroller">
+                <a href="#" onclick="renderView('dashboard')" id="nav-dashboard" class="sidebar-link flex items-center gap-3 px-4 py-3 text-gray-300 hover:bg-gray-800 hover:text-white rounded-md transition-colors active">
+                    <i class="fa-solid fa-chart-line w-5"></i> Dashboard
+                </a>
+                <a href="#" onclick="renderView('inventory')" id="nav-inventory" class="sidebar-link flex items-center gap-3 px-4 py-3 text-gray-300 hover:bg-gray-800 hover:text-white rounded-md transition-colors">
+                    <i class="fa-solid fa-boxes-stacked w-5"></i> Inventory
+                </a>
+                <a href="#" onclick="renderView('reports')" id="nav-reports" class="sidebar-link flex items-center gap-3 px-4 py-3 text-gray-300 hover:bg-gray-800 hover:text-white rounded-md transition-colors">
+                    <i class="fa-solid fa-file-invoice w-5"></i> Reports
+                </a>
+                <a href="#" onclick="renderView('shopping')" id="nav-shopping" class="sidebar-link flex items-center gap-3 px-4 py-3 text-gray-300 hover:bg-gray-800 hover:text-white rounded-md transition-colors">
+                    <i class="fa-solid fa-cart-shopping w-5"></i> Shopping List
+                </a>
+                
+                <!-- Admin Only Links -->
+                <div id="admin-links" class="hidden pt-4 mt-4 border-t border-gray-800">
+                    <p class="px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Administration</p>
+                    <a href="#" onclick="renderView('users')" id="nav-users" class="sidebar-link flex items-center gap-3 px-4 py-3 text-gray-300 hover:bg-gray-800 hover:text-white rounded-md transition-colors">
+                        <i class="fa-solid fa-users w-5"></i> User Management
+                    </a>
+                </div>
+            </nav>
 
-    <!-- Modals -->
-    
+            <div class="p-4 border-t border-gray-800 space-y-2">
+                <a href="#" onclick="renderView('profile')" id="nav-profile" class="sidebar-link flex items-center gap-3 px-4 py-2 text-gray-400 hover:text-white rounded-md transition-colors text-sm">
+                    <i class="fa-solid fa-user-gear w-5"></i> My Profile
+                </a>
+                <button onclick="handleLogout()" class="w-full flex items-center gap-3 px-4 py-2 text-red-400 hover:bg-red-900/20 hover:text-red-300 rounded-md transition-colors text-sm">
+                    <i class="fa-solid fa-sign-out-alt w-5"></i> Logout
+                </button>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="flex-1 flex flex-col overflow-hidden relative w-full">
+            <!-- Header -->
+            <header class="bg-white shadow-sm h-16 flex items-center justify-between px-4 sm:px-6 z-10">
+                <div class="flex items-center gap-4">
+                    <button onclick="toggleSidebar()" class="lg:hidden text-gray-500 hover:text-gray-700 focus:outline-none">
+                        <i class="fa-solid fa-bars text-xl"></i>
+                    </button>
+                    <h2 id="page-title" class="text-xl sm:text-2xl font-semibold text-gray-800 truncate">Dashboard</h2>
+                </div>
+                <div class="flex items-center gap-4">
+                    <div id="header-actions">
+                        <!-- Dynamic buttons injected here -->
+                    </div>
+                </div>
+            </header>
+
+            <!-- Content Area -->
+            <div id="content-area" class="flex-1 overflow-auto p-6 relative scroller">
+                <!-- Dynamic Content Will Be Injected Here -->
+            </div>
+        </main>
+    </div>
+
+    <!-- MODALS -->
+
     <!-- Add/Edit Item Modal -->
     <div id="addItemModal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50 backdrop-blur-sm">
         <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden transform transition-all scale-100">
@@ -88,7 +176,7 @@
                 <input type="hidden" id="itemId">
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">Component Name</label>
-                    <input type="text" id="itemName" required class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none" placeholder="e.g., Arduino Uno">
+                    <input type="text" id="itemName" required class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none">
                 </div>
                 <div class="grid grid-cols-2 gap-4">
                     <div>
@@ -105,7 +193,7 @@
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">Location/Shelf</label>
-                        <input type="text" id="itemLocation" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="e.g., A-12">
+                        <input type="text" id="itemLocation" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none">
                     </div>
                 </div>
                 <div class="grid grid-cols-3 gap-4">
@@ -139,7 +227,7 @@
             </div>
             <form id="stockForm" onsubmit="handleStockSubmit(event)" class="p-6 space-y-4">
                 <input type="hidden" id="stockItemId">
-                <input type="hidden" id="stockType"> <!-- 'in' or 'out' -->
+                <input type="hidden" id="stockType">
                 
                 <div class="text-center mb-4">
                     <p class="text-gray-600 text-sm">Adjusting stock for:</p>
@@ -165,37 +253,95 @@
         </div>
     </div>
 
+    <!-- User Management Modal -->
+    <div id="userModal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50 backdrop-blur-sm">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
+                <h3 class="text-lg font-bold text-gray-800" id="userModalTitle">Add User</h3>
+                <button onclick="closeModal('userModal')" class="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+            </div>
+            <form id="userForm" onsubmit="handleUserSubmit(event)" class="p-6 space-y-4">
+                <input type="hidden" id="userId">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Employee ID (Login ID)</label>
+                    <input type="text" id="userEmpId" required class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+                    <input type="text" id="userName" required class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Role</label>
+                    <select id="userRole" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none">
+                        <option value="assistant">Lab Assistant</option>
+                        <option value="admin">Administrator</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                    <input type="password" id="userPassword" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Leave blank to keep unchanged (if editing)">
+                </div>
+
+                <div class="pt-4 flex justify-end gap-3">
+                    <button type="button" onclick="closeModal('userModal')" class="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium transition-colors">Cancel</button>
+                    <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors">Save User</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+
     <script>
-        // State Management
+        // --- DATA & STATE ---
         const state = {
             items: [],
-            transactions: []
+            transactions: [],
+            users: [],
+            currentUser: null
         };
 
-        // Initialize Data
+        // --- INITIALIZATION ---
         function init() {
+            // Load Data
             const storedItems = localStorage.getItem('roboLabItems');
             const storedTransactions = localStorage.getItem('roboLabTransactions');
-            
+            const storedUsers = localStorage.getItem('roboLabUsers');
+            const storedSession = sessionStorage.getItem('roboLabSession');
+
+            // Initialize Items
             if (storedItems) {
                 state.items = JSON.parse(storedItems);
             } else {
-                // Seed data
                 state.items = [
-                    { id: '1', name: 'Arduino Uno R3', category: 'Microcontrollers', quantity: 15, minStock: 5, price: 25.00, location: 'A-1' },
-                    { id: '2', name: 'Raspberry Pi 4', category: 'Microcontrollers', quantity: 3, minStock: 5, price: 45.00, location: 'A-2' },
-                    { id: '3', name: 'Ultrasonic Sensor HC-SR04', category: 'Sensors', quantity: 45, minStock: 10, price: 2.50, location: 'B-1' },
-                    { id: '4', name: 'Servo Motor SG90', category: 'Motors', quantity: 20, minStock: 8, price: 3.00, location: 'B-2' },
-                    { id: '5', name: 'Jumper Wires (M-M)', category: 'Passive', quantity: 200, minStock: 50, price: 0.10, location: 'C-1' }
+                    { id: '1', name: 'Arduino Uno R3', category: 'Microcontrollers', quantity: 15, minStock: 5, price: 550.00, location: 'A-1' },
+                    { id: '2', name: 'Raspberry Pi 4', category: 'Microcontrollers', quantity: 3, minStock: 5, price: 4500.00, location: 'A-2' },
+                    { id: '3', name: 'Ultrasonic Sensor HC-SR04', category: 'Sensors', quantity: 45, minStock: 10, price: 80.00, location: 'B-1' },
+                    { id: '4', name: 'Servo Motor SG90', category: 'Motors', quantity: 20, minStock: 8, price: 120.00, location: 'B-2' },
+                    { id: '5', name: 'Jumper Wires (M-M)', category: 'Passive', quantity: 200, minStock: 50, price: 10.00, location: 'C-1' }
                 ];
                 saveData();
             }
 
-            if (storedTransactions) {
-                state.transactions = JSON.parse(storedTransactions);
+            if (storedTransactions) state.transactions = JSON.parse(storedTransactions);
+
+            // Initialize Users (Seed Admin if none)
+            if (storedUsers) {
+                state.users = JSON.parse(storedUsers);
+            } else {
+                state.users = [
+                    { id: '1', empId: 'admin', name: 'System Admin', password: 'admin123', role: 'admin' },
+                    { id: '2', empId: 'assistant', name: 'Lab Assistant', password: '123', role: 'assistant' }
+                ];
+                saveUsers();
             }
 
-            renderView('dashboard');
+            // Check Session
+            if (storedSession) {
+                state.currentUser = JSON.parse(storedSession);
+                showApp();
+            } else {
+                showLogin();
+            }
         }
 
         function saveData() {
@@ -203,31 +349,102 @@
             localStorage.setItem('roboLabTransactions', JSON.stringify(state.transactions));
         }
 
-        // View Rendering Logic
+        function saveUsers() {
+            localStorage.setItem('roboLabUsers', JSON.stringify(state.users));
+        }
+
+        // --- AUTHENTICATION ---
+        function handleLogin(e) {
+            e.preventDefault();
+            const id = document.getElementById('loginId').value;
+            const pass = document.getElementById('loginPassword').value;
+            const errorDiv = document.getElementById('loginError');
+
+            const user = state.users.find(u => u.empId === id && u.password === pass);
+
+            if (user) {
+                state.currentUser = user;
+                sessionStorage.setItem('roboLabSession', JSON.stringify(user));
+                errorDiv.classList.add('hidden');
+                document.getElementById('loginId').value = '';
+                document.getElementById('loginPassword').value = '';
+                showApp();
+            } else {
+                errorDiv.classList.remove('hidden');
+            }
+        }
+
+        function handleLogout() {
+            state.currentUser = null;
+            sessionStorage.removeItem('roboLabSession');
+            showLogin();
+        }
+
+        function showLogin() {
+            document.getElementById('login-view').classList.remove('hidden');
+            document.getElementById('app-view').classList.add('hidden');
+        }
+
+        function showApp() {
+            document.getElementById('login-view').classList.add('hidden');
+            document.getElementById('app-view').classList.remove('hidden');
+            
+            // Update Sidebar User Info
+            const initials = state.currentUser.name.split(' ').map(n => n[0]).join('').substring(0,2).toUpperCase();
+            document.getElementById('sidebarUserInitials').textContent = initials;
+            document.getElementById('sidebarUserName').textContent = state.currentUser.name;
+            document.getElementById('sidebarUserRole').textContent = state.currentUser.role === 'admin' ? 'Administrator' : 'Lab Assistant';
+
+            // Show/Hide Admin Links
+            const adminLinks = document.getElementById('admin-links');
+            if (state.currentUser.role === 'admin') {
+                adminLinks.classList.remove('hidden');
+            } else {
+                adminLinks.classList.add('hidden');
+            }
+
+            renderView('dashboard');
+        }
+
+        // --- NAVIGATION & VIEWS ---
         function renderView(viewName) {
-            // Close sidebar on mobile if open
+            // Mobile: close sidebar
             const sidebar = document.getElementById('sidebar');
             if (!sidebar.classList.contains('-translate-x-full') && window.innerWidth < 1024) {
                 toggleSidebar();
             }
 
-            // Update Sidebar Active State
+            // Update Active Link
             document.querySelectorAll('.sidebar-link').forEach(el => el.classList.remove('active'));
-            document.getElementById(`nav-${viewName}`).classList.add('active');
+            const navLink = document.getElementById(`nav-${viewName}`);
+            if(navLink) navLink.classList.add('active');
 
             const contentArea = document.getElementById('content-area');
             const pageTitle = document.getElementById('page-title');
+            const headerActions = document.getElementById('header-actions');
             
             contentArea.innerHTML = '';
+            headerActions.innerHTML = ''; // Clear header buttons
 
             switch(viewName) {
                 case 'dashboard':
                     pageTitle.textContent = 'Dashboard';
                     renderDashboard(contentArea);
+                    // Add Item Button in Header
+                    headerActions.innerHTML = `
+                        <button onclick="openModal('addItemModal')" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 sm:px-4 sm:py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors whitespace-nowrap">
+                            <i class="fa-solid fa-plus"></i> <span class="hidden sm:inline">Add New Item</span>
+                        </button>
+                    `;
                     break;
                 case 'inventory':
                     pageTitle.textContent = 'Inventory Management';
                     renderInventory(contentArea);
+                    headerActions.innerHTML = `
+                        <button onclick="openModal('addItemModal')" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 sm:px-4 sm:py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors whitespace-nowrap">
+                            <i class="fa-solid fa-plus"></i> <span class="hidden sm:inline">Add New Item</span>
+                        </button>
+                    `;
                     break;
                 case 'reports':
                     pageTitle.textContent = 'Reports & Analytics';
@@ -237,10 +454,27 @@
                     pageTitle.textContent = 'Shopping List';
                     renderShoppingList(contentArea);
                     break;
+                case 'users':
+                    if (state.currentUser.role !== 'admin') {
+                        renderView('dashboard'); // Redirect
+                        return;
+                    }
+                    pageTitle.textContent = 'User Management';
+                    renderUsers(contentArea);
+                    headerActions.innerHTML = `
+                        <button onclick="openUserModal()" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 sm:px-4 sm:py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors whitespace-nowrap">
+                            <i class="fa-solid fa-user-plus"></i> <span class="hidden sm:inline">Add User</span>
+                        </button>
+                    `;
+                    break;
+                case 'profile':
+                    pageTitle.textContent = 'My Profile';
+                    renderProfile(contentArea);
+                    break;
             }
         }
 
-        // --- DASHBOARD ---
+        // --- DASHBOARD VIEW ---
         function renderDashboard(container) {
             const totalItems = state.items.reduce((acc, item) => acc + item.quantity, 0);
             const totalValue = state.items.reduce((acc, item) => acc + (item.quantity * item.price), 0);
@@ -266,7 +500,7 @@
                                 <h3 class="text-3xl font-bold text-gray-800 mt-2">₹${totalValue.toFixed(2)}</h3>
                             </div>
                             <div class="p-3 bg-green-100 rounded-lg text-green-600">
-                                <i class="fa-solid fa-dollar-sign text-xl"></i>
+                                <i class="fa-solid fa-indian-rupee-sign text-xl"></i>
                             </div>
                         </div>
                     </div>
@@ -353,7 +587,89 @@
             container.innerHTML = html;
         }
 
-        // --- INVENTORY ---
+        // --- USERS VIEW (ADMIN ONLY) ---
+        function renderUsers(container) {
+            const html = `
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left">
+                            <thead class="bg-gray-100 text-xs uppercase text-gray-500 font-semibold">
+                                <tr>
+                                    <th class="px-6 py-3">Employee ID</th>
+                                    <th class="px-6 py-3">Name</th>
+                                    <th class="px-6 py-3">Role</th>
+                                    <th class="px-6 py-3 text-right">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-200">
+                                ${state.users.map(user => `
+                                    <tr class="hover:bg-gray-50 transition-colors">
+                                        <td class="px-6 py-4 font-mono text-sm text-gray-600">${user.empId}</td>
+                                        <td class="px-6 py-4 font-medium text-gray-800">${user.name}</td>
+                                        <td class="px-6 py-4">
+                                            <span class="px-2 py-1 rounded-full text-xs font-bold ${user.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}">
+                                                ${user.role === 'admin' ? 'Administrator' : 'Lab Assistant'}
+                                            </span>
+                                        </td>
+                                        <td class="px-6 py-4 text-right">
+                                            <div class="flex items-center justify-end gap-2">
+                                                <button onclick="editUser('${user.id}')" class="text-blue-600 hover:text-blue-800">
+                                                    <i class="fa-solid fa-pen-to-square"></i>
+                                                </button>
+                                                ${user.id !== state.currentUser.id ? `
+                                                <button onclick="deleteUser('${user.id}')" class="text-red-600 hover:text-red-800">
+                                                    <i class="fa-solid fa-trash"></i>
+                                                </button>
+                                                ` : ''}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+            container.innerHTML = html;
+        }
+
+        // --- PROFILE VIEW ---
+        function renderProfile(container) {
+            const user = state.currentUser;
+            const html = `
+                <div class="max-w-2xl mx-auto bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                    <div class="p-8 border-b border-gray-200 text-center bg-gray-50">
+                        <div class="w-24 h-24 rounded-full bg-blue-600 text-white text-3xl font-bold flex items-center justify-center mx-auto mb-4">
+                            ${user.name.split(' ').map(n => n[0]).join('').substring(0,2).toUpperCase()}
+                        </div>
+                        <h2 class="text-2xl font-bold text-gray-800">${user.name}</h2>
+                        <p class="text-gray-500">${user.role === 'admin' ? 'Administrator' : 'Lab Assistant'}</p>
+                    </div>
+                    <form onsubmit="handleProfileUpdate(event)" class="p-8 space-y-6">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Employee ID (Cannot be changed)</label>
+                            <input type="text" value="${user.empId}" disabled class="w-full bg-gray-100 border border-gray-300 rounded-lg px-4 py-2 text-gray-500 cursor-not-allowed">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+                            <input type="text" id="profileName" value="${user.name}" required class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">New Password (Optional)</label>
+                            <input type="password" id="profilePassword" placeholder="Leave blank to keep current password" class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none">
+                        </div>
+                        <div class="flex justify-end pt-4">
+                            <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium transition-colors">
+                                Update Profile
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            `;
+            container.innerHTML = html;
+        }
+
+        // --- INVENTORY, REPORTS, SHOPPING (Reuse existing logic) ---
         function renderInventory(container) {
             const html = `
                 <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
@@ -428,57 +744,61 @@
             container.innerHTML = html;
         }
 
-        function filterInventory() {
-            const search = document.getElementById('inventorySearch').value.toLowerCase();
-            const category = document.getElementById('categoryFilter').value;
-            const rows = document.querySelectorAll('.item-row');
+        function renderReports(container) {
+             const html = `
+                <div class="grid grid-cols-1 gap-8">
+                    <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+                        <div class="flex justify-between items-center mb-6">
+                            <h3 class="text-lg font-bold text-gray-800">Inventory Movement</h3>
+                            <div class="flex bg-gray-100 rounded-lg p-1">
+                                <button onclick="updateChart('month')" id="btn-month" class="px-3 py-1 rounded-md text-sm font-medium transition-colors bg-white shadow-sm text-gray-800">Monthly</button>
+                                <button onclick="updateChart('quarter')" id="btn-quarter" class="px-3 py-1 rounded-md text-sm font-medium transition-colors text-gray-500 hover:text-gray-800">Quarterly</button>
+                                <button onclick="updateChart('year')" id="btn-year" class="px-3 py-1 rounded-md text-sm font-medium transition-colors text-gray-500 hover:text-gray-800">Yearly</button>
+                            </div>
+                        </div>
+                        <div class="h-80 w-full">
+                            <canvas id="movementChart"></canvas>
+                        </div>
+                    </div>
 
-            rows.forEach(row => {
-                const name = row.dataset.name;
-                const cat = row.dataset.category;
-                const matchesSearch = name.includes(search);
-                const matchesCategory = category === '' || cat === category;
-
-                if (matchesSearch && matchesCategory) {
-                    row.style.display = '';
-                } else {
-                    row.style.display = 'none';
-                }
-            });
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                         <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+                            <h3 class="text-lg font-bold text-gray-800 mb-4">Stock Value by Category</h3>
+                            <div class="h-64 flex justify-center">
+                                <canvas id="categoryChart"></canvas>
+                            </div>
+                        </div>
+                        <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+                             <h3 class="text-lg font-bold text-gray-800 mb-4">Most Active Items (Top 5)</h3>
+                             <div class="overflow-hidden">
+                                <table class="w-full text-sm text-left">
+                                    <thead class="text-gray-500 bg-gray-50 uppercase text-xs">
+                                        <tr>
+                                            <th class="px-4 py-2">Item</th>
+                                            <th class="px-4 py-2 text-right">Transactions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-gray-100">
+                                        ${getTopActiveItems().map(i => `
+                                            <tr>
+                                                <td class="px-4 py-3 font-medium text-gray-800">${i.name}</td>
+                                                <td class="px-4 py-3 text-right text-gray-600">${i.count}</td>
+                                            </tr>
+                                        `).join('')}
+                                    </tbody>
+                                </table>
+                             </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            container.innerHTML = html;
+            setTimeout(() => {
+                updateChart('month');
+                renderCategoryChart();
+            }, 100);
         }
 
-        function exportToCSV() {
-            if (state.items.length === 0) {
-                alert("No items to export.");
-                return;
-            }
-
-            const headers = ["Name", "Category", "Location", "Quantity", "Min Stock", "Price"];
-            const rows = state.items.map(item => [
-                `"${item.name.replace(/"/g, '""')}"`, // Escape quotes
-                `"${item.category}"`,
-                `"${item.location}"`,
-                item.quantity,
-                item.minStock,
-                item.price.toFixed(2)
-            ]);
-
-            const csvContent = [
-                headers.join(","),
-                ...rows.map(r => r.join(","))
-            ].join("\n");
-
-            const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement("a");
-            link.setAttribute("href", url);
-            link.setAttribute("download", "robolab_inventory.csv");
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-        }
-
-        // --- SHOPPING LIST ---
         function renderShoppingList(container) {
             const lowStockItems = state.items.filter(item => item.quantity < item.minStock);
             const totalEstimatedCost = lowStockItems.reduce((acc, item) => {
@@ -542,67 +862,10 @@
             container.innerHTML = html;
         }
 
-        // --- REPORTS ---
-        function renderReports(container) {
-            // Setup canvas
-            const html = `
-                <div class="grid grid-cols-1 gap-8">
-                    <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-                        <div class="flex justify-between items-center mb-6">
-                            <h3 class="text-lg font-bold text-gray-800">Inventory Movement</h3>
-                            <div class="flex bg-gray-100 rounded-lg p-1">
-                                <button onclick="updateChart('month')" id="btn-month" class="px-3 py-1 rounded-md text-sm font-medium transition-colors bg-white shadow-sm text-gray-800">Monthly</button>
-                                <button onclick="updateChart('quarter')" id="btn-quarter" class="px-3 py-1 rounded-md text-sm font-medium transition-colors text-gray-500 hover:text-gray-800">Quarterly</button>
-                                <button onclick="updateChart('year')" id="btn-year" class="px-3 py-1 rounded-md text-sm font-medium transition-colors text-gray-500 hover:text-gray-800">Yearly</button>
-                            </div>
-                        </div>
-                        <div class="h-80 w-full">
-                            <canvas id="movementChart"></canvas>
-                        </div>
-                    </div>
-
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                         <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-                            <h3 class="text-lg font-bold text-gray-800 mb-4">Stock Value by Category</h3>
-                            <div class="h-64 flex justify-center">
-                                <canvas id="categoryChart"></canvas>
-                            </div>
-                        </div>
-                        <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-                             <h3 class="text-lg font-bold text-gray-800 mb-4">Most Active Items (Top 5)</h3>
-                             <div class="overflow-hidden">
-                                <table class="w-full text-sm text-left">
-                                    <thead class="text-gray-500 bg-gray-50 uppercase text-xs">
-                                        <tr>
-                                            <th class="px-4 py-2">Item</th>
-                                            <th class="px-4 py-2 text-right">Transactions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody class="divide-y divide-gray-100">
-                                        ${getTopActiveItems().map(i => `
-                                            <tr>
-                                                <td class="px-4 py-3 font-medium text-gray-800">${i.name}</td>
-                                                <td class="px-4 py-3 text-right text-gray-600">${i.count}</td>
-                                            </tr>
-                                        `).join('')}
-                                    </tbody>
-                                </table>
-                             </div>
-                        </div>
-                    </div>
-                </div>
-            `;
-            container.innerHTML = html;
-            setTimeout(() => {
-                updateChart('month');
-                renderCategoryChart();
-            }, 100);
-        }
-
+        // --- CHART HELPERS ---
         let currentChart = null;
-
         function updateChart(period) {
-            // Styling buttons
+             // Styling buttons
             ['month', 'quarter', 'year'].forEach(p => {
                 const btn = document.getElementById(`btn-${p}`);
                 if(btn) {
@@ -615,35 +878,28 @@
             });
 
             const ctx = document.getElementById('movementChart').getContext('2d');
-            
-            // Dynamic Data Calculation
             let labels = [];
             let dataIn = [];
             let dataOut = [];
-
             const now = new Date();
             const currentYear = now.getFullYear();
 
             if (period === 'month') {
                 labels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-                // Initialize arrays with 0
                 dataIn = new Array(12).fill(0);
                 dataOut = new Array(12).fill(0);
-
                 state.transactions.forEach(t => {
                     const d = new Date(t.date);
                     if (d.getFullYear() === currentYear) {
-                        const month = d.getMonth(); // 0-11
+                        const month = d.getMonth();
                         if (t.type === 'in') dataIn[month] += t.quantity;
                         else dataOut[month] += t.quantity;
                     }
                 });
-
             } else if (period === 'quarter') {
                 labels = ['Q1 (Jan-Mar)', 'Q2 (Apr-Jun)', 'Q3 (Jul-Sep)', 'Q4 (Oct-Dec)'];
                 dataIn = new Array(4).fill(0);
                 dataOut = new Array(4).fill(0);
-
                 state.transactions.forEach(t => {
                     const d = new Date(t.date);
                     if (d.getFullYear() === currentYear) {
@@ -653,15 +909,10 @@
                         else dataOut[quarter] += t.quantity;
                     }
                 });
-
             } else {
-                // Year view: Last 5 years
-                for (let i = 4; i >= 0; i--) {
-                    labels.push((currentYear - i).toString());
-                }
+                for (let i = 4; i >= 0; i--) labels.push((currentYear - i).toString());
                 dataIn = new Array(5).fill(0);
                 dataOut = new Array(5).fill(0);
-
                 state.transactions.forEach(t => {
                     const d = new Date(t.date);
                     const year = d.getFullYear();
@@ -673,65 +924,37 @@
                 });
             }
 
-            if (currentChart) {
-                currentChart.destroy();
-            }
-
+            if (currentChart) currentChart.destroy();
             currentChart = new Chart(ctx, {
                 type: 'bar',
                 data: {
                     labels: labels,
                     datasets: [
-                        {
-                            label: 'Stock In',
-                            data: dataIn,
-                            backgroundColor: 'rgba(59, 130, 246, 0.6)',
-                            borderColor: 'rgba(59, 130, 246, 1)',
-                            borderWidth: 1
-                        },
-                        {
-                            label: 'Stock Out',
-                            data: dataOut,
-                            backgroundColor: 'rgba(239, 68, 68, 0.6)',
-                            borderColor: 'rgba(239, 68, 68, 1)',
-                            borderWidth: 1
-                        }
+                        { label: 'Stock In', data: dataIn, backgroundColor: 'rgba(59, 130, 246, 0.6)', borderColor: 'rgba(59, 130, 246, 1)', borderWidth: 1 },
+                        { label: 'Stock Out', data: dataOut, backgroundColor: 'rgba(239, 68, 68, 0.6)', borderColor: 'rgba(239, 68, 68, 1)', borderWidth: 1 }
                     ]
                 },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: {
-                        y: { beginAtZero: true }
-                    }
-                }
+                options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } }
             });
         }
 
         function renderCategoryChart() {
             const ctx = document.getElementById('categoryChart').getContext('2d');
-            
             const categories = {};
             state.items.forEach(item => {
                 if (!categories[item.category]) categories[item.category] = 0;
                 categories[item.category] += (item.quantity * item.price);
             });
-
             new Chart(ctx, {
                 type: 'doughnut',
                 data: {
                     labels: Object.keys(categories),
                     datasets: [{
                         data: Object.values(categories),
-                        backgroundColor: [
-                            '#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#6366F1'
-                        ]
+                        backgroundColor: ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#6366F1']
                     }]
                 },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false
-                }
+                options: { responsive: true, maintainAspectRatio: false }
             });
         }
 
@@ -741,7 +964,6 @@
                 if(!counts[t.itemId]) counts[t.itemId] = 0;
                 counts[t.itemId]++;
             });
-            
             const sortedIds = Object.keys(counts).sort((a,b) => counts[b] - counts[a]).slice(0, 5);
             return sortedIds.map(id => {
                 const item = state.items.find(i => i.id === id);
@@ -749,14 +971,150 @@
             });
         }
 
+        function filterInventory() {
+            const search = document.getElementById('inventorySearch').value.toLowerCase();
+            const category = document.getElementById('categoryFilter').value;
+            const rows = document.querySelectorAll('.item-row');
+            rows.forEach(row => {
+                const name = row.dataset.name;
+                const cat = row.dataset.category;
+                const matchesSearch = name.includes(search);
+                const matchesCategory = category === '' || cat === category;
+                row.style.display = (matchesSearch && matchesCategory) ? '' : 'none';
+            });
+        }
 
-        // --- UI HELPERS ---
+        function exportToCSV() {
+            if (state.items.length === 0) { alert("No items to export."); return; }
+            const headers = ["Name", "Category", "Location", "Quantity", "Min Stock", "Price"];
+            const rows = state.items.map(item => [
+                `"${item.name.replace(/"/g, '""')}"`,
+                `"${item.category}"`,
+                `"${item.location}"`,
+                item.quantity,
+                item.minStock,
+                item.price.toFixed(2)
+            ]);
+            const csvContent = [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
+            const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.setAttribute("href", url);
+            link.setAttribute("download", "robolab_inventory.csv");
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
 
+        // --- USER MGMT LOGIC ---
+        function openUserModal() {
+            document.getElementById('userForm').reset();
+            document.getElementById('userId').value = '';
+            document.getElementById('userModalTitle').textContent = 'Add New User';
+            document.getElementById('userEmpId').disabled = false;
+            openModal('userModal');
+        }
+
+        function handleUserSubmit(e) {
+            e.preventDefault();
+            const id = document.getElementById('userId').value;
+            const empId = document.getElementById('userEmpId').value;
+            const name = document.getElementById('userName').value;
+            const role = document.getElementById('userRole').value;
+            const password = document.getElementById('userPassword').value;
+
+            if (id) {
+                // Edit
+                const index = state.users.findIndex(u => u.id === id);
+                if (index !== -1) {
+                    // Update fields
+                    state.users[index].name = name;
+                    state.users[index].role = role;
+                    if (password) state.users[index].password = password;
+                    // Note: EmpId is usually immutable, but if admin wants to fix a typo, we might allow it if it doesn't conflict. 
+                    // For simplicity, we assume EmpId is unique key conceptually, but we can update it if checking for duplicates.
+                    const duplicate = state.users.find(u => u.empId === empId && u.id !== id);
+                    if (duplicate) { alert('Employee ID already exists!'); return; }
+                    state.users[index].empId = empId;
+                }
+            } else {
+                // Add
+                const duplicate = state.users.find(u => u.empId === empId);
+                if (duplicate) { alert('Employee ID already exists!'); return; }
+                
+                const newUser = {
+                    id: Date.now().toString(),
+                    empId, name, role,
+                    password: password || '123456' // Default if empty
+                };
+                state.users.push(newUser);
+            }
+            saveUsers();
+            closeModal('userModal');
+            renderView('users');
+        }
+
+        function editUser(id) {
+            const user = state.users.find(u => u.id === id);
+            if (!user) return;
+            document.getElementById('userId').value = user.id;
+            document.getElementById('userEmpId').value = user.empId;
+            document.getElementById('userName').value = user.name;
+            document.getElementById('userRole').value = user.role;
+            document.getElementById('userPassword').value = '';
+            document.getElementById('userModalTitle').textContent = 'Edit User';
+            openModal('userModal');
+        }
+
+        function deleteUser(id) {
+            if (id === state.currentUser.id) { alert("You cannot delete yourself."); return; }
+            if (confirm('Delete this user?')) {
+                state.users = state.users.filter(u => u.id !== id);
+                saveUsers();
+                renderView('users');
+            }
+        }
+
+        function handleProfileUpdate(e) {
+            e.preventDefault();
+            const name = document.getElementById('profileName').value;
+            const password = document.getElementById('profilePassword').value;
+            
+            // Update in users array
+            const idx = state.users.findIndex(u => u.id === state.currentUser.id);
+            if (idx !== -1) {
+                state.users[idx].name = name;
+                if(password) state.users[idx].password = password;
+                
+                // Update current user
+                state.currentUser = state.users[idx];
+                sessionStorage.setItem('roboLabSession', JSON.stringify(state.currentUser));
+                saveUsers();
+                
+                // Refresh
+                showApp(); // Re-renders sidebar with new name
+                renderView('profile');
+                alert('Profile updated successfully');
+            }
+        }
+
+        // --- COMMON LOGIC ---
+        function openModal(id) {
+            document.getElementById(id).classList.remove('hidden');
+            document.getElementById(id).classList.add('flex');
+            if (id === 'addItemModal') {
+                document.getElementById('itemForm').reset();
+                document.getElementById('itemId').value = '';
+                document.getElementById('modalTitle').textContent = 'Add New Component';
+            }
+        }
+        function closeModal(id) {
+            document.getElementById(id).classList.add('hidden');
+            document.getElementById(id).classList.remove('flex');
+        }
         function toggleSidebar() {
             const sidebar = document.getElementById('sidebar');
             const overlay = document.getElementById('sidebarOverlay');
-            
-            // Toggle translate class
             if (sidebar.classList.contains('-translate-x-full')) {
                 sidebar.classList.remove('-translate-x-full');
                 overlay.classList.remove('hidden');
@@ -765,26 +1123,6 @@
                 overlay.classList.add('hidden');
             }
         }
-
-        // --- LOGIC: MODALS & CRUD ---
-
-        function openModal(id) {
-            document.getElementById(id).classList.remove('hidden');
-            document.getElementById(id).classList.add('flex');
-            
-            if (id === 'addItemModal') {
-                // Reset form
-                document.getElementById('itemForm').reset();
-                document.getElementById('itemId').value = '';
-                document.getElementById('modalTitle').textContent = 'Add New Component';
-            }
-        }
-
-        function closeModal(id) {
-            document.getElementById(id).classList.add('hidden');
-            document.getElementById(id).classList.remove('flex');
-        }
-
         function handleItemSubmit(e) {
             e.preventDefault();
             const id = document.getElementById('itemId').value;
@@ -794,34 +1132,20 @@
             const quantity = parseInt(document.getElementById('itemQuantity').value);
             const minStock = parseInt(document.getElementById('itemMinStock').value);
             const price = parseFloat(document.getElementById('itemPrice').value);
-
             if (id) {
-                // Edit
                 const index = state.items.findIndex(i => i.id === id);
-                if (index !== -1) {
-                    state.items[index] = { ...state.items[index], name, category, location, quantity, minStock, price };
-                }
+                if (index !== -1) state.items[index] = { ...state.items[index], name, category, location, quantity, minStock, price };
             } else {
-                // Add
-                const newItem = {
-                    id: Date.now().toString(),
-                    name, category, location, quantity, minStock, price
-                };
-                state.items.push(newItem);
+                state.items.push({ id: Date.now().toString(), name, category, location, quantity, minStock, price });
             }
-            
             saveData();
             closeModal('addItemModal');
-            
-            // Refresh current view
             const currentView = document.querySelector('.sidebar-link.active').id.replace('nav-', '');
             renderView(currentView);
         }
-
         function editItem(id) {
             const item = state.items.find(i => i.id === id);
             if (!item) return;
-
             document.getElementById('itemId').value = item.id;
             document.getElementById('itemName').value = item.name;
             document.getElementById('itemCategory').value = item.category;
@@ -829,93 +1153,53 @@
             document.getElementById('itemQuantity').value = item.quantity;
             document.getElementById('itemMinStock').value = item.minStock;
             document.getElementById('itemPrice').value = item.price;
-            
             document.getElementById('modalTitle').textContent = 'Edit Component';
             openModal('addItemModal');
         }
-
         function deleteItem(id) {
-            if (confirm('Are you sure you want to delete this component?')) {
+            if (confirm('Delete this item?')) {
                 state.items = state.items.filter(i => i.id !== id);
                 saveData();
                 renderView('inventory');
             }
         }
-
-        // --- STOCK LOGIC ---
-
         function openStockModal(id, type) {
             const item = state.items.find(i => i.id === id);
             if (!item) return;
-
             document.getElementById('stockItemId').value = id;
             document.getElementById('stockType').value = type;
             document.getElementById('stockItemNameDisplay').textContent = item.name;
             document.getElementById('stockCurrentQty').textContent = item.quantity;
             document.getElementById('stockAmount').value = '';
             document.getElementById('stockNotes').value = '';
-
             const title = type === 'in' ? 'Stock In (Add)' : 'Stock Out (Remove)';
             document.getElementById('stockModalTitle').textContent = title;
             document.getElementById('stockActionText').textContent = type === 'in' ? 'Add' : 'Remove';
-            
             const btn = document.getElementById('stockSubmitBtn');
-            btn.className = type === 'in' 
-                ? "px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors"
-                : "px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors";
-
+            btn.className = type === 'in' ? "px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors" : "px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors";
             openModal('stockModal');
             setTimeout(() => document.getElementById('stockAmount').focus(), 100);
         }
-
         function handleStockSubmit(e) {
             e.preventDefault();
             const id = document.getElementById('stockItemId').value;
             const type = document.getElementById('stockType').value;
             const amount = parseInt(document.getElementById('stockAmount').value);
             const notes = document.getElementById('stockNotes').value;
-
             if (isNaN(amount) || amount <= 0) return;
-
             const itemIndex = state.items.findIndex(i => i.id === id);
             if (itemIndex === -1) return;
-
             const item = state.items[itemIndex];
-
-            if (type === 'out' && item.quantity < amount) {
-                alert('Insufficient stock!');
-                return;
-            }
-
-            // Update Item
-            if (type === 'in') {
-                item.quantity += amount;
-            } else {
-                item.quantity -= amount;
-            }
-
-            // Create Transaction
-            const transaction = {
-                id: Date.now().toString(),
-                itemId: id,
-                type,
-                quantity: amount,
-                date: new Date().toISOString(),
-                notes
-            };
-            state.transactions.push(transaction);
-
+            if (type === 'out' && item.quantity < amount) { alert('Insufficient stock!'); return; }
+            if (type === 'in') item.quantity += amount; else item.quantity -= amount;
+            state.transactions.push({ id: Date.now().toString(), itemId: id, type, quantity: amount, date: new Date().toISOString(), notes, user: state.currentUser.name });
             saveData();
             closeModal('stockModal');
-            
-            // Refresh current view
             const currentView = document.querySelector('.sidebar-link.active').id.replace('nav-', '');
             renderView(currentView);
         }
 
-        // Init
         init();
-
     </script>
 </body>
 </html>
