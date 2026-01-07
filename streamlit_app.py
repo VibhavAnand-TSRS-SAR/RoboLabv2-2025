@@ -246,19 +246,22 @@ def view_dashboard():
         df = pd.read_sql_query("SELECT * FROM inventory", get_db_connection())
         
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Total Items", int(df['quantity'].sum()))
-        c2.metric("Inventory Value", f"₹{(df['quantity'] * df['price']).sum():,.0f}")
-        c3.metric("Alerts", len(df[df['quantity'] <= df['min_stock']]))
-        c4.metric("Categories", df['category'].nunique())
+        c1.metric("Total Items", int(df['quantity'].sum()) if not df.empty else 0)
+        c2.metric("Inventory Value", f"₹{(df['quantity'] * df['price']).sum():,.0f}" if not df.empty else "₹0")
+        c3.metric("Alerts", len(df[df['quantity'] <= df['min_stock']]) if not df.empty else 0)
+        c4.metric("Categories", df['category'].nunique() if not df.empty else 0)
         
         col_chart, col_recent = st.columns([2, 1])
         with col_chart:
             st.subheader("Category Breakdown")
-            chart_data = df.groupby('category')['quantity'].sum().reset_index()
-            chart = alt.Chart(chart_data).mark_arc(innerRadius=60).encode(
-                theta='quantity', color='category', tooltip=['category', 'quantity']
-            )
-            st.altair_chart(chart, use_container_width=True)
+            if not df.empty:
+                chart_data = df.groupby('category')['quantity'].sum().reset_index()
+                chart = alt.Chart(chart_data).mark_arc(innerRadius=60).encode(
+                    theta='quantity', color='category', tooltip=['category', 'quantity']
+                )
+                st.altair_chart(chart, use_container_width=True)
+            else:
+                st.info("No data available")
             
         with col_recent:
             st.subheader("System Logs")
@@ -436,20 +439,84 @@ def landing_page():
         </div>
     """, unsafe_allow_html=True)
 
-# --- OTHER VIEWS (Standard Logic) ---
+# --- INVENTORY VIEW WITH BULK UPLOAD ---
 def view_inventory():
-    st.title("📦 Inventory")
-    df = pd.read_sql_query("SELECT * FROM inventory", get_db_connection())
-    st.dataframe(df, use_container_width=True)
+    st.title("📦 Inventory Management")
     
-    with st.expander("➕ Add New Item"):
+    tab1, tab2, tab3 = st.tabs(["🔎 View Inventory", "➕ Add Single Item", "📂 Bulk Upload (CSV)"])
+    
+    # 1. VIEW TAB
+    with tab1:
+        df = pd.read_sql_query("SELECT * FROM inventory", get_db_connection())
+        st.dataframe(df, use_container_width=True)
+        
+        if st.session_state.user['role'] == 'admin':
+            with st.expander("🗑️ Delete Item"):
+                if not df.empty:
+                    del_name = st.selectbox("Select Item", df['name'].tolist())
+                    if st.button("Delete Item"):
+                        run_query("DELETE FROM inventory WHERE name = ?", (del_name,))
+                        log_activity("Delete Item", f"Deleted {del_name}")
+                        st.rerun()
+
+    # 2. ADD TAB
+    with tab2:
         with st.form("add_i"):
-            n = st.text_input("Name"); c = st.selectbox("Cat", ["Sensors", "Motors", "Microcontrollers", "Others"])
-            q = st.number_input("Qty", 0); p = st.number_input("Price", 0.0)
-            if st.form_submit_button("Add"):
-                run_query("INSERT INTO inventory (name, category, quantity, price) VALUES (?,?,?,?)", (n,c,q,p))
+            n = st.text_input("Name")
+            c = st.selectbox("Category", ["Sensors", "Motors", "Microcontrollers", "Power", "Tools", "Others"])
+            q = st.number_input("Quantity", 0)
+            ms = st.number_input("Min Stock", 5)
+            p = st.number_input("Price", 0.0)
+            l = st.text_input("Location", "Bin A")
+            
+            if st.form_submit_button("Add Item"):
+                run_query("INSERT INTO inventory (name, category, quantity, min_stock, price, location) VALUES (?,?,?,?,?,?)", (n,c,q,ms,p,l))
                 log_activity("Inventory", f"Added item {n}")
+                st.success("Item Added")
+                time.sleep(1)
                 st.rerun()
+
+    # 3. UPLOAD TAB (NEW)
+    with tab3:
+        st.subheader("Import Data via CSV")
+        st.markdown("""
+        **Instructions:**
+        1. Upload a `.csv` file.
+        2. Required Columns: `name`, `category`, `quantity`, `price`
+        3. Optional Columns: `min_stock`, `location`
+        """)
+        
+        uploaded_file = st.file_uploader("Choose CSV File", type=['csv'])
+        
+        if uploaded_file:
+            try:
+                df_upload = pd.read_csv(uploaded_file)
+                st.write("Preview:")
+                st.dataframe(df_upload.head())
+                
+                if st.button("Confirm Import"):
+                    count = 0
+                    for index, row in df_upload.iterrows():
+                        # Basic validation
+                        if 'name' in row and pd.notna(row['name']):
+                            name = row['name']
+                            cat = row.get('category', 'Others')
+                            qty = row.get('quantity', 0)
+                            price = row.get('price', 0.0)
+                            ms = row.get('min_stock', 5)
+                            loc = row.get('location', 'Unknown')
+                            
+                            # Insert
+                            run_query("INSERT INTO inventory (name, category, quantity, min_stock, price, location) VALUES (?,?,?,?,?,?)", 
+                                      (name, cat, qty, ms, price, loc))
+                            count += 1
+                    
+                    log_activity("Bulk Upload", f"Imported {count} items via CSV")
+                    st.success(f"Successfully imported {count} items!")
+                    time.sleep(2)
+                    st.rerun()
+            except Exception as e:
+                st.error(f"Error reading CSV: {e}")
 
 def view_stock_ops():
     st.title("🔄 Stock Operations")
