@@ -102,6 +102,7 @@ def init_db():
     conn = get_db_connection()
     c = conn.cursor()
     
+    # Create Tables
     c.execute('''CREATE TABLE IF NOT EXISTS users (
                  id INTEGER PRIMARY KEY AUTOINCREMENT,
                  emp_id TEXT UNIQUE NOT NULL,
@@ -152,7 +153,7 @@ def init_db():
                  details TEXT,
                  timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)''')
 
-    # Seed Roles
+    # Seed Roles if empty
     c.execute("SELECT count(*) FROM roles")
     if c.fetchone()[0] == 0:
         all_perms = json.dumps(["Dashboard", "Inventory", "Stock Operations", "Reports", "Procurement List", "User Management", "Audit Logs", "Settings"])
@@ -161,8 +162,22 @@ def init_db():
         asst_perms = json.dumps(["Dashboard", "Inventory", "Stock Operations", "Reports", "Procurement List"])
         c.execute("INSERT INTO roles (name, permissions) VALUES (?, ?)", ('assistant', asst_perms))
         conn.commit()
+    else:
+        # MIGRATION: Update existing roles to include "Procurement List" if missing
+        c.execute("SELECT name, permissions FROM roles")
+        roles = c.fetchall()
+        for role in roles:
+            perms = json.loads(role[1])
+            # Check if "Procurement List" is missing (might have old "Shopping List")
+            if "Procurement List" not in perms:
+                # Remove old "Shopping List" if exists
+                if "Shopping List" in perms:
+                    perms.remove("Shopping List")
+                perms.append("Procurement List")
+                c.execute("UPDATE roles SET permissions = ? WHERE name = ?", (json.dumps(perms), role[0]))
+        conn.commit()
 
-    # Seed Users
+    # Seed Users if empty
     c.execute("SELECT count(*) FROM users")
     if c.fetchone()[0] == 0:
         c.execute("INSERT INTO users (emp_id, name, password, role) VALUES (?, ?, ?, ?)", ('admin', 'System Admin', 'admin123', 'admin'))
@@ -326,7 +341,7 @@ def view_profile():
     col_img, col_form = st.columns([1, 2])
     
     with col_img:
-        img_src = image_from_base64(user['profile_pic'])
+        img_src = image_from_base64(user.get('profile_pic'))
         st.markdown(f"<div style='text-align:center;'><img src='{img_src}' style='width:150px; height:150px; object-fit:cover; border-radius:50%; border: 4px solid {current_theme['primary']};'></div>", unsafe_allow_html=True)
         
         new_pic = st.file_uploader("Change Photo", type=['png', 'jpg', 'jpeg'])
@@ -348,16 +363,18 @@ def view_profile():
             password = c2.text_input("New Password (Optional)", type="password")
             
             dob_val = None
-            if curr['dob']:
+            if curr.get('dob'):
                 try:
                     dob_val = datetime.strptime(curr['dob'], '%Y-%m-%d')
                 except:
                     dob_val = None
 
             dob = c1.date_input("Date of Birth", value=dob_val)
-            gender = c2.selectbox("Gender", ["Male", "Female", "Other"], index=["Male", "Female", "Other"].index(curr['gender']) if curr['gender'] in ["Male", "Female", "Other"] else 0)
-            phone = c1.text_input("Phone", value=curr['phone'] if curr['phone'] else "")
-            address = c2.text_area("Address", value=curr['address'] if curr['address'] else "")
+            gender_options = ["Male", "Female", "Other"]
+            gender_idx = gender_options.index(curr['gender']) if curr.get('gender') in gender_options else 0
+            gender = c2.selectbox("Gender", gender_options, index=gender_idx)
+            phone = c1.text_input("Phone", value=curr.get('phone') or "")
+            address = c2.text_area("Address", value=curr.get('address') or "")
             
             if st.form_submit_button("Save Changes"):
                 q = "UPDATE users SET name=?, dob=?, gender=?, phone=?, address=?"
@@ -532,7 +549,7 @@ def view_stock_ops():
                 </div>
             """, unsafe_allow_html=True)
 
-# --- REVAMPED PROCUREMENT LIST ---
+# --- PROCUREMENT LIST ---
 def view_procurement():
     st.title("🛒 Procurement List")
     st.caption("Generate a procurement request for items below minimum stock levels.")
@@ -545,10 +562,6 @@ def view_procurement():
         return
     
     st.warning(f"⚠️ {len(df)} items are below minimum stock level.")
-    
-    # Initialize session state for procurement data
-    if 'procurement_data' not in st.session_state:
-        st.session_state.procurement_data = {}
     
     st.markdown("---")
     st.subheader("📝 Fill Procurement Details")
@@ -617,15 +630,7 @@ def view_procurement():
         
         # Create Excel file
         buffer = io.BytesIO()
-        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-            procurement_df.to_excel(writer, sheet_name='Procurement Request', index=False)
-            
-            # Auto-adjust column width
-            worksheet = writer.sheets['Procurement Request']
-            for i, col in enumerate(procurement_df.columns):
-                max_length = max(len(str(col)), procurement_df[col].astype(str).map(len).max())
-                worksheet.column_dimensions[chr(65 + i)].width = min(max_length + 2, 50)
-        
+        procurement_df.to_excel(buffer, index=False, engine='openpyxl')
         buffer.seek(0)
         
         # Log activity
@@ -765,20 +770,28 @@ def main():
     if st.session_state.user is None:
         landing_page()
     else:
-        perms_json = run_query("SELECT permissions FROM roles WHERE name = ?", (st.session_state.user['role'],), fetch=True)[0]['permissions']
-        perms = json.loads(perms_json)
+        perms_data = run_query("SELECT permissions FROM roles WHERE name = ?", (st.session_state.user['role'],), fetch=True)
+        if perms_data:
+            perms = json.loads(perms_data[0]['permissions'])
+        else:
+            perms = []
         
         with st.sidebar:
-            img_src = image_from_base64(st.session_state.user['profile_pic'])
+            img_src = image_from_base64(st.session_state.user.get('profile_pic'))
             st.markdown(f"<div style='text-align:center; margin-bottom:10px;'><img src='{img_src}' style='width:80px; height:80px; border-radius:50%; object-fit:cover; border:2px solid {current_theme['primary']};'></div>", unsafe_allow_html=True)
             st.markdown(f"<div style='text-align:center'><b>{st.session_state.user['name']}</b><br><small>{st.session_state.user['role'].upper()}</small></div>", unsafe_allow_html=True)
             st.markdown("---")
             
-            # Updated nav_map with Procurement List
+            # Navigation map
             nav_map = {
-                "Dashboard": "📊", "Inventory": "📦", "Stock Operations": "🔄", 
-                "Reports": "📑", "Audit Logs": "🛡️", "Procurement List": "🛒", 
-                "User Management": "👥", "Settings": "⚙️"
+                "Dashboard": "📊", 
+                "Inventory": "📦", 
+                "Stock Operations": "🔄", 
+                "Reports": "📑", 
+                "Audit Logs": "🛡️", 
+                "Procurement List": "🛒", 
+                "User Management": "👥", 
+                "Settings": "⚙️"
             }
             
             if st.button("👤 My Profile", use_container_width=True):
@@ -799,16 +812,27 @@ def main():
             st.session_state.current_view = "Dashboard"
         v = st.session_state.current_view
         
-        if v == "My Profile": view_profile()
-        elif v == "Dashboard": view_dashboard()
-        elif v == "Inventory" and v in perms: view_inventory()
-        elif v == "Stock Operations" and v in perms: view_stock_ops()
-        elif v == "Reports" and v in perms: view_reports()
-        elif v == "Audit Logs" and v in perms: view_audit_logs()
-        elif v == "Procurement List" and v in perms: view_procurement()
-        elif v == "User Management" and v in perms: view_users()
-        elif v == "Settings" and v in perms: view_settings()
-        elif v not in perms: st.error("⛔ Access Denied")
+        # Routing
+        if v == "My Profile": 
+            view_profile()
+        elif v == "Dashboard": 
+            view_dashboard()
+        elif v == "Inventory" and v in perms: 
+            view_inventory()
+        elif v == "Stock Operations" and v in perms: 
+            view_stock_ops()
+        elif v == "Reports" and v in perms: 
+            view_reports()
+        elif v == "Audit Logs" and v in perms: 
+            view_audit_logs()
+        elif v == "Procurement List" and v in perms: 
+            view_procurement()
+        elif v == "User Management" and v in perms: 
+            view_users()
+        elif v == "Settings" and v in perms: 
+            view_settings()
+        elif v not in perms and v != "My Profile": 
+            st.error("⛔ Access Denied")
 
 if __name__ == '__main__':
     main()
