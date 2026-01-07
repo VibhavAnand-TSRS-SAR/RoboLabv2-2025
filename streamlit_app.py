@@ -87,6 +87,26 @@ st.markdown(f"""
         border: 1px solid #e5e7eb; margin-bottom: 10px;
         box-shadow: 0 1px 3px rgba(0,0,0,0.05);
     }}
+    
+    .step-indicator {{
+        display: flex; justify-content: center; gap: 10px; margin-bottom: 20px;
+    }}
+    .step {{
+        padding: 10px 20px; border-radius: 20px; font-weight: 600;
+        background: #e5e7eb; color: #6b7280;
+    }}
+    .step.active {{
+        background: {current_theme['primary']}; color: white;
+    }}
+    .step.completed {{
+        background: #10b981; color: white;
+    }}
+    
+    .po-card {{
+        background: white; padding: 15px; border-radius: 10px;
+        border: 1px solid #e5e7eb; margin-bottom: 10px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }}
 </style>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 """, unsafe_allow_html=True)
@@ -152,6 +172,19 @@ def init_db():
                  action TEXT,
                  details TEXT,
                  timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)''')
+    
+    # NEW: Purchase Orders Table
+    c.execute('''CREATE TABLE IF NOT EXISTS purchase_orders (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 po_number TEXT UNIQUE NOT NULL,
+                 created_by TEXT,
+                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                 required_by DATE,
+                 status TEXT DEFAULT 'Draft',
+                 items_json TEXT,
+                 total_items INTEGER,
+                 mode TEXT,
+                 justification TEXT)''')
 
     # Seed Roles if empty
     c.execute("SELECT count(*) FROM roles")
@@ -163,14 +196,12 @@ def init_db():
         c.execute("INSERT INTO roles (name, permissions) VALUES (?, ?)", ('assistant', asst_perms))
         conn.commit()
     else:
-        # MIGRATION: Update existing roles to include "Procurement List" if missing
+        # Migration: Update existing roles
         c.execute("SELECT name, permissions FROM roles")
         roles = c.fetchall()
         for role in roles:
             perms = json.loads(role[1])
-            # Check if "Procurement List" is missing (might have old "Shopping List")
             if "Procurement List" not in perms:
-                # Remove old "Shopping List" if exists
                 if "Shopping List" in perms:
                     perms.remove("Shopping List")
                 perms.append("Procurement List")
@@ -238,6 +269,28 @@ def logout_user():
     st.query_params.clear()
     st.session_state.user = None
     st.rerun()
+
+# --- HELPER: Generate PO Number ---
+def generate_po_number():
+    now = datetime.now()
+    # Academic year: April to March
+    if now.month >= 4:
+        academic_year = f"{now.year}-{str(now.year + 1)[2:]}"
+    else:
+        academic_year = f"{now.year - 1}-{str(now.year)[2:]}"
+    
+    # Get count of POs this academic year
+    start_month = 4  # April
+    if now.month >= 4:
+        start_date = datetime(now.year, 4, 1)
+    else:
+        start_date = datetime(now.year - 1, 4, 1)
+    
+    existing = run_query("SELECT COUNT(*) as cnt FROM purchase_orders WHERE created_at >= ?", (start_date,), fetch=True)
+    count = existing[0]['cnt'] + 1 if existing else 1
+    
+    po_number = f"TSRS/RoboLab/PO/{academic_year}/PO{count:04d}"
+    return po_number
 
 # --- VIEWS ---
 
@@ -392,7 +445,6 @@ def view_profile():
                 time.sleep(1)
                 st.rerun()
 
-# --- LANDING PAGE WITH LOGO ---
 def landing_page():
     col1, col2, col3 = st.columns([1, 2, 1])
     
@@ -549,102 +601,313 @@ def view_stock_ops():
                 </div>
             """, unsafe_allow_html=True)
 
-# --- PROCUREMENT LIST ---
+# --- REVAMPED PROCUREMENT LIST ---
 def view_procurement():
     st.title("🛒 Procurement List")
-    st.caption("Generate a procurement request for items below minimum stock levels.")
     
-    # Get low stock items
-    df = pd.read_sql_query("SELECT * FROM inventory WHERE quantity < min_stock", get_db_connection())
+    # Initialize session state for procurement workflow
+    if 'procurement_step' not in st.session_state:
+        st.session_state.procurement_step = 1
+    if 'selected_items' not in st.session_state:
+        st.session_state.selected_items = []
+    if 'procurement_details' not in st.session_state:
+        st.session_state.procurement_details = {}
     
-    if df.empty:
-        st.success("✅ All items are well-stocked! No procurement needed.")
-        return
+    # Tabs for New Request and History
+    tab_new, tab_history = st.tabs(["📝 New Request", "📋 Purchase Order History"])
     
-    st.warning(f"⚠️ {len(df)} items are below minimum stock level.")
-    
-    st.markdown("---")
-    st.subheader("📝 Fill Procurement Details")
-    
-    # Global fields
-    col1, col2 = st.columns(2)
-    with col1:
-        requested_by = st.text_input("Requested By", value=st.session_state.user['name'])
-    with col2:
-        required_by_date = st.date_input("Required By Date", value=datetime.now() + timedelta(days=7))
-    
-    st.markdown("---")
-    
-    # Item-wise form
-    procurement_items = []
-    
-    for idx, row in df.iterrows():
-        item_name = row['name']
-        shortage = row['min_stock'] - row['quantity']
-        
+    with tab_new:
+        # Step Indicator
+        step = st.session_state.procurement_step
         st.markdown(f"""
-            <div class="procurement-item">
-                <strong style="color:{current_theme['primary']};">📦 {item_name}</strong>
-                <span style="float:right; background:#fef2f2; color:#dc2626; padding:2px 8px; border-radius:10px; font-size:12px;">
-                    Shortage: {shortage}
-                </span>
+            <div class="step-indicator">
+                <div class="step {'completed' if step > 1 else 'active' if step == 1 else ''}">1. Select Items</div>
+                <div class="step {'completed' if step > 2 else 'active' if step == 2 else ''}">2. Fill Details</div>
+                <div class="step {'completed' if step > 3 else 'active' if step == 3 else ''}">3. Preview</div>
+                <div class="step {'active' if step == 4 else ''}">4. Download</div>
             </div>
         """, unsafe_allow_html=True)
         
-        col1, col2, col3 = st.columns([1, 1, 2])
-        
-        with col1:
-            qty = st.number_input(f"Quantity", min_value=1, value=int(shortage), key=f"qty_{idx}")
-        
-        with col2:
-            mode = st.selectbox("Mode", ["Online", "Offline"], key=f"mode_{idx}")
-        
-        with col3:
-            if mode == "Online":
-                link = st.text_input("Purchase Link", placeholder="https://...", key=f"link_{idx}")
-            else:
-                link = ""
-        
-        justification = st.text_area("Justification", placeholder="Why is this item needed?", key=f"just_{idx}", height=68)
-        
-        procurement_items.append({
-            "Item Name": item_name,
-            "Current Stock": row['quantity'],
-            "Min Stock": row['min_stock'],
-            "Quantity Requested": qty,
-            "Justification": justification,
-            "Mode": mode,
-            "Purchase Link": link if mode == "Online" else "N/A",
-            "Requested By": requested_by,
-            "Required By": str(required_by_date)
-        })
-        
         st.markdown("---")
+        
+        # STEP 1: Select Items
+        if step == 1:
+            st.subheader("Step 1: Select Items for Procurement")
+            
+            df = pd.read_sql_query("SELECT * FROM inventory WHERE quantity < min_stock", get_db_connection())
+            
+            if df.empty:
+                st.success("✅ All items are well-stocked! No procurement needed.")
+                return
+            
+            st.warning(f"⚠️ {len(df)} items are below minimum stock level.")
+            
+            # Select All checkbox
+            select_all = st.checkbox("Select All Items")
+            
+            selected = []
+            for idx, row in df.iterrows():
+                shortage = row['min_stock'] - row['quantity']
+                
+                col1, col2, col3, col4 = st.columns([0.5, 3, 1, 1])
+                with col1:
+                    checked = st.checkbox("", value=select_all, key=f"check_{idx}")
+                with col2:
+                    st.write(f"**{row['name']}** ({row['category']})")
+                with col3:
+                    st.write(f"Stock: {row['quantity']}")
+                with col4:
+                    st.write(f"🔴 Need: {shortage}")
+                
+                if checked:
+                    selected.append({
+                        'id': row['id'],
+                        'name': row['name'],
+                        'category': row['category'],
+                        'current_stock': row['quantity'],
+                        'min_stock': row['min_stock'],
+                        'shortage': shortage,
+                        'price': row['price']
+                    })
+            
+            st.markdown("---")
+            
+            col1, col2 = st.columns([3, 1])
+            with col2:
+                if st.button("Proceed to Details ➡️", type="primary", use_container_width=True):
+                    if len(selected) > 0:
+                        st.session_state.selected_items = selected
+                        st.session_state.procurement_step = 2
+                        st.rerun()
+                    else:
+                        st.error("Please select at least one item.")
+        
+        # STEP 2: Fill Details
+        elif step == 2:
+            st.subheader("Step 2: Fill Procurement Details")
+            
+            selected_items = st.session_state.selected_items
+            
+            # Global Settings
+            st.markdown("### 📋 General Information")
+            col1, col2 = st.columns(2)
+            with col1:
+                requested_by = st.text_input("Requested By", value=st.session_state.user['name'])
+            with col2:
+                required_by = st.date_input("Required By", value=datetime.now() + timedelta(days=7))
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                mode = st.selectbox("Purchase Mode", ["Online", "Offline"])
+            with col2:
+                if mode == "Online":
+                    default_link = st.text_input("Default Purchase Link (Optional)", placeholder="https://...")
+                else:
+                    default_link = ""
+            
+            st.markdown("### 📝 Justification")
+            st.info("💡 Tip: Fill the justification below and click 'Apply to All' to copy it to all items.")
+            
+            col1, col2 = st.columns([4, 1])
+            with col1:
+                global_justification = st.text_area("Common Justification", placeholder="Required for robotics lab projects and maintenance...", key="global_just")
+            with col2:
+                st.write("")
+                st.write("")
+                apply_all = st.button("Apply to All ⬇️")
+            
+            st.markdown("---")
+            st.markdown("### 📦 Item Details")
+            
+            item_details = []
+            for idx, item in enumerate(selected_items):
+                with st.expander(f"📦 {item['name']} (Shortage: {item['shortage']})", expanded=True):
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        qty = st.number_input("Quantity", min_value=1, value=int(item['shortage']), key=f"qty_{idx}")
+                    with col2:
+                        if mode == "Online":
+                            link = st.text_input("Purchase Link", value=default_link, key=f"link_{idx}")
+                        else:
+                            link = "N/A"
+                    
+                    # Pre-fill justification if Apply All was clicked
+                    default_just = global_justification if apply_all else ""
+                    justification = st.text_area("Justification", value=default_just, key=f"just_{idx}", height=80)
+                    
+                    item_details.append({
+                        'Item Name': item['name'],
+                        'Category': item['category'],
+                        'Current Stock': item['current_stock'],
+                        'Min Stock': item['min_stock'],
+                        'Quantity Requested': qty,
+                        'Unit Price': item['price'],
+                        'Estimated Cost': qty * item['price'],
+                        'Justification': justification,
+                        'Mode': mode,
+                        'Purchase Link': link
+                    })
+            
+            st.markdown("---")
+            
+            col1, col2, col3 = st.columns([1, 1, 1])
+            with col1:
+                if st.button("⬅️ Back", use_container_width=True):
+                    st.session_state.procurement_step = 1
+                    st.rerun()
+            with col3:
+                if st.button("Preview ➡️", type="primary", use_container_width=True):
+                    st.session_state.procurement_details = {
+                        'requested_by': requested_by,
+                        'required_by': str(required_by),
+                        'mode': mode,
+                        'items': item_details
+                    }
+                    st.session_state.procurement_step = 3
+                    st.rerun()
+        
+        # STEP 3: Preview
+        elif step == 3:
+            st.subheader("Step 3: Preview Procurement Request")
+            
+            details = st.session_state.procurement_details
+            
+            # Summary Card
+            st.markdown(f"""
+                <div class="po-card">
+                    <h4 style="color:{current_theme['primary']};">📋 Request Summary</h4>
+                    <p><strong>Requested By:</strong> {details['requested_by']}</p>
+                    <p><strong>Required By:</strong> {details['required_by']}</p>
+                    <p><strong>Purchase Mode:</strong> {details['mode']}</p>
+                    <p><strong>Total Items:</strong> {len(details['items'])}</p>
+                </div>
+            """, unsafe_allow_html=True)
+            
+            # Preview Table
+            preview_df = pd.DataFrame(details['items'])
+            st.dataframe(preview_df, use_container_width=True)
+            
+            # Total Cost
+            total_cost = sum([item['Estimated Cost'] for item in details['items']])
+            st.metric("Total Estimated Cost", f"₹{total_cost:,.2f}")
+            
+            st.markdown("---")
+            
+            col1, col2, col3 = st.columns([1, 1, 1])
+            with col1:
+                if st.button("⬅️ Back to Edit", use_container_width=True):
+                    st.session_state.procurement_step = 2
+                    st.rerun()
+            with col3:
+                if st.button("Generate PO ➡️", type="primary", use_container_width=True):
+                    # Generate PO Number
+                    po_number = generate_po_number()
+                    
+                    # Save to Database
+                    run_query("""
+                        INSERT INTO purchase_orders (po_number, created_by, required_by, status, items_json, total_items, mode, justification)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        po_number,
+                        details['requested_by'],
+                        details['required_by'],
+                        'Generated',
+                        json.dumps(details['items']),
+                        len(details['items']),
+                        details['mode'],
+                        details['items'][0]['Justification'] if details['items'] else ''
+                    ))
+                    
+                    log_activity("Procurement", f"Generated PO: {po_number}")
+                    
+                    st.session_state.generated_po = po_number
+                    st.session_state.procurement_step = 4
+                    st.rerun()
+        
+        # STEP 4: Download
+        elif step == 4:
+            st.subheader("Step 4: Download Procurement Request")
+            
+            po_number = st.session_state.get('generated_po', 'N/A')
+            details = st.session_state.procurement_details
+            
+            st.success(f"✅ Purchase Order Generated Successfully!")
+            
+            st.markdown(f"""
+                <div class="po-card" style="text-align:center; padding:30px;">
+                    <h2 style="color:{current_theme['primary']};">{po_number}</h2>
+                    <p style="color:#6b7280;">Your Purchase Order Number</p>
+                </div>
+            """, unsafe_allow_html=True)
+            
+            # Create Excel
+            items_df = pd.DataFrame(details['items'])
+            items_df.insert(0, 'PO Number', po_number)
+            items_df['Requested By'] = details['requested_by']
+            items_df['Required By'] = details['required_by']
+            
+            buffer = io.BytesIO()
+            items_df.to_excel(buffer, index=False, engine='openpyxl')
+            buffer.seek(0)
+            
+            col1, col2, col3 = st.columns([1, 2, 1])
+            with col2:
+                st.download_button(
+                    label="📥 Download Excel File",
+                    data=buffer,
+                    file_name=f"{po_number.replace('/', '_')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
+            
+            st.markdown("---")
+            
+            if st.button("🔄 Create New Request", use_container_width=True):
+                st.session_state.procurement_step = 1
+                st.session_state.selected_items = []
+                st.session_state.procurement_details = {}
+                st.rerun()
     
-    # Generate Excel
-    st.subheader("📤 Generate Procurement Request")
-    
-    if st.button("Generate Excel for Admin", type="primary", use_container_width=True):
-        # Create DataFrame
-        procurement_df = pd.DataFrame(procurement_items)
+    # History Tab
+    with tab_history:
+        st.subheader("📋 Purchase Order History")
         
-        # Create Excel file
-        buffer = io.BytesIO()
-        procurement_df.to_excel(buffer, index=False, engine='openpyxl')
-        buffer.seek(0)
+        pos = run_query("SELECT * FROM purchase_orders ORDER BY created_at DESC", fetch=True)
         
-        # Log activity
-        log_activity("Procurement Request", f"Generated procurement request for {len(procurement_items)} items")
-        
-        # Download button
-        st.download_button(
-            label="📥 Download Procurement Request Excel",
-            data=buffer,
-            file_name=f"Procurement_Request_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-        
-        st.success("✅ Procurement request generated! Download and send to Admin for approval.")
+        if not pos:
+            st.info("No purchase orders created yet.")
+        else:
+            for po in pos:
+                with st.expander(f"📄 {po['po_number']} - {po['status']}", expanded=False):
+                    col1, col2, col3 = st.columns(3)
+                    col1.write(f"**Created By:** {po['created_by']}")
+                    col2.write(f"**Created At:** {po['created_at'][:10]}")
+                    col3.write(f"**Required By:** {po['required_by']}")
+                    
+                    st.write(f"**Total Items:** {po['total_items']}")
+                    st.write(f"**Mode:** {po['mode']}")
+                    
+                    # Show Items
+                    if po['items_json']:
+                        items = json.loads(po['items_json'])
+                        items_df = pd.DataFrame(items)
+                        st.dataframe(items_df, use_container_width=True)
+                    
+                    # Re-download option
+                    if po['items_json']:
+                        items_df = pd.DataFrame(items)
+                        items_df.insert(0, 'PO Number', po['po_number'])
+                        
+                        buff = io.BytesIO()
+                        items_df.to_excel(buff, index=False, engine='openpyxl')
+                        buff.seek(0)
+                        
+                        st.download_button(
+                            f"📥 Re-download {po['po_number']}",
+                            buff,
+                            f"{po['po_number'].replace('/', '_')}.xlsx",
+                            key=f"dl_{po['id']}"
+                        )
 
 def view_users():
     st.title("👥 User & Role Management")
@@ -782,7 +1045,6 @@ def main():
             st.markdown(f"<div style='text-align:center'><b>{st.session_state.user['name']}</b><br><small>{st.session_state.user['role'].upper()}</small></div>", unsafe_allow_html=True)
             st.markdown("---")
             
-            # Navigation map
             nav_map = {
                 "Dashboard": "📊", 
                 "Inventory": "📦", 
@@ -802,6 +1064,9 @@ def main():
                 if p in perms:
                     if st.button(f"{icon} {p}", use_container_width=True):
                         st.session_state.current_view = p
+                        # Reset procurement workflow on nav
+                        if p == "Procurement List":
+                            st.session_state.procurement_step = 1
                         st.rerun()
                         
             st.markdown("---")
@@ -812,7 +1077,6 @@ def main():
             st.session_state.current_view = "Dashboard"
         v = st.session_state.current_view
         
-        # Routing
         if v == "My Profile": 
             view_profile()
         elif v == "Dashboard": 
