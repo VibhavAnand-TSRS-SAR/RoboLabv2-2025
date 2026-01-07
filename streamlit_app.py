@@ -122,7 +122,6 @@ def init_db():
     conn = get_db_connection()
     c = conn.cursor()
     
-    # Create Tables
     c.execute('''CREATE TABLE IF NOT EXISTS users (
                  id INTEGER PRIMARY KEY AUTOINCREMENT,
                  emp_id TEXT UNIQUE NOT NULL,
@@ -173,7 +172,6 @@ def init_db():
                  details TEXT,
                  timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)''')
     
-    # NEW: Purchase Orders Table
     c.execute('''CREATE TABLE IF NOT EXISTS purchase_orders (
                  id INTEGER PRIMARY KEY AUTOINCREMENT,
                  po_number TEXT UNIQUE NOT NULL,
@@ -186,7 +184,6 @@ def init_db():
                  mode TEXT,
                  justification TEXT)''')
 
-    # Seed Roles if empty
     c.execute("SELECT count(*) FROM roles")
     if c.fetchone()[0] == 0:
         all_perms = json.dumps(["Dashboard", "Inventory", "Stock Operations", "Reports", "Procurement List", "User Management", "Audit Logs", "Settings"])
@@ -196,7 +193,6 @@ def init_db():
         c.execute("INSERT INTO roles (name, permissions) VALUES (?, ?)", ('assistant', asst_perms))
         conn.commit()
     else:
-        # Migration: Update existing roles
         c.execute("SELECT name, permissions FROM roles")
         roles = c.fetchall()
         for role in roles:
@@ -208,7 +204,6 @@ def init_db():
                 c.execute("UPDATE roles SET permissions = ? WHERE name = ?", (json.dumps(perms), role[0]))
         conn.commit()
 
-    # Seed Users if empty
     c.execute("SELECT count(*) FROM users")
     if c.fetchone()[0] == 0:
         c.execute("INSERT INTO users (emp_id, name, password, role) VALUES (?, ?, ?, ?)", ('admin', 'System Admin', 'admin123', 'admin'))
@@ -270,17 +265,13 @@ def logout_user():
     st.session_state.user = None
     st.rerun()
 
-# --- HELPER: Generate PO Number ---
 def generate_po_number():
     now = datetime.now()
-    # Academic year: April to March
     if now.month >= 4:
         academic_year = f"{now.year}-{str(now.year + 1)[2:]}"
     else:
         academic_year = f"{now.year - 1}-{str(now.year)[2:]}"
     
-    # Get count of POs this academic year
-    start_month = 4  # April
     if now.month >= 4:
         start_date = datetime(now.year, 4, 1)
     else:
@@ -605,19 +596,21 @@ def view_stock_ops():
 def view_procurement():
     st.title("🛒 Procurement List")
     
-    # Initialize session state for procurement workflow
+    # Initialize session state
     if 'procurement_step' not in st.session_state:
         st.session_state.procurement_step = 1
     if 'selected_items' not in st.session_state:
         st.session_state.selected_items = []
     if 'procurement_details' not in st.session_state:
         st.session_state.procurement_details = {}
+    if 'global_justification' not in st.session_state:
+        st.session_state.global_justification = ""
+    if 'item_justifications' not in st.session_state:
+        st.session_state.item_justifications = {}
     
-    # Tabs for New Request and History
     tab_new, tab_history = st.tabs(["📝 New Request", "📋 Purchase Order History"])
     
     with tab_new:
-        # Step Indicator
         step = st.session_state.procurement_step
         st.markdown(f"""
             <div class="step-indicator">
@@ -642,7 +635,6 @@ def view_procurement():
             
             st.warning(f"⚠️ {len(df)} items are below minimum stock level.")
             
-            # Select All checkbox
             select_all = st.checkbox("Select All Items")
             
             selected = []
@@ -677,6 +669,8 @@ def view_procurement():
                 if st.button("Proceed to Details ➡️", type="primary", use_container_width=True):
                     if len(selected) > 0:
                         st.session_state.selected_items = selected
+                        # Initialize justifications dict
+                        st.session_state.item_justifications = {item['name']: "" for item in selected}
                         st.session_state.procurement_step = 2
                         st.rerun()
                     else:
@@ -705,16 +699,23 @@ def view_procurement():
                 else:
                     default_link = ""
             
-            st.markdown("### 📝 Justification")
-            st.info("💡 Tip: Fill the justification below and click 'Apply to All' to copy it to all items.")
+            st.markdown("### 📝 Common Justification")
+            st.info("💡 Enter a justification below and click 'Apply to All Items' to copy it to all items.")
             
-            col1, col2 = st.columns([4, 1])
-            with col1:
-                global_justification = st.text_area("Common Justification", placeholder="Required for robotics lab projects and maintenance...", key="global_just")
-            with col2:
-                st.write("")
-                st.write("")
-                apply_all = st.button("Apply to All ⬇️")
+            global_just = st.text_area(
+                "Common Justification", 
+                value=st.session_state.global_justification,
+                placeholder="Required for robotics lab projects and maintenance...", 
+                key="global_just_input"
+            )
+            
+            if st.button("✅ Apply to All Items", type="secondary"):
+                st.session_state.global_justification = global_just
+                # Apply to all items
+                for item in selected_items:
+                    st.session_state.item_justifications[item['name']] = global_just
+                st.success("Justification applied to all items!")
+                st.rerun()
             
             st.markdown("---")
             st.markdown("### 📦 Item Details")
@@ -731,9 +732,16 @@ def view_procurement():
                         else:
                             link = "N/A"
                     
-                    # Pre-fill justification if Apply All was clicked
-                    default_just = global_justification if apply_all else ""
-                    justification = st.text_area("Justification", value=default_just, key=f"just_{idx}", height=80)
+                    # Get justification from session state
+                    current_just = st.session_state.item_justifications.get(item['name'], "")
+                    justification = st.text_area(
+                        "Justification", 
+                        value=current_just,
+                        key=f"just_{idx}", 
+                        height=80
+                    )
+                    # Update session state
+                    st.session_state.item_justifications[item['name']] = justification
                     
                     item_details.append({
                         'Item Name': item['name'],
@@ -772,7 +780,6 @@ def view_procurement():
             
             details = st.session_state.procurement_details
             
-            # Summary Card
             st.markdown(f"""
                 <div class="po-card">
                     <h4 style="color:{current_theme['primary']};">📋 Request Summary</h4>
@@ -783,11 +790,10 @@ def view_procurement():
                 </div>
             """, unsafe_allow_html=True)
             
-            # Preview Table
+            # Preview Table with all columns including Justification
             preview_df = pd.DataFrame(details['items'])
             st.dataframe(preview_df, use_container_width=True)
             
-            # Total Cost
             total_cost = sum([item['Estimated Cost'] for item in details['items']])
             st.metric("Total Estimated Cost", f"₹{total_cost:,.2f}")
             
@@ -800,10 +806,8 @@ def view_procurement():
                     st.rerun()
             with col3:
                 if st.button("Generate PO ➡️", type="primary", use_container_width=True):
-                    # Generate PO Number
                     po_number = generate_po_number()
                     
-                    # Save to Database
                     run_query("""
                         INSERT INTO purchase_orders (po_number, created_by, required_by, status, items_json, total_items, mode, justification)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -840,11 +844,19 @@ def view_procurement():
                 </div>
             """, unsafe_allow_html=True)
             
-            # Create Excel
+            # Create Excel with all details including Justification
             items_df = pd.DataFrame(details['items'])
             items_df.insert(0, 'PO Number', po_number)
             items_df['Requested By'] = details['requested_by']
             items_df['Required By'] = details['required_by']
+            
+            # Reorder columns for better readability
+            column_order = [
+                'PO Number', 'Item Name', 'Category', 'Current Stock', 'Min Stock',
+                'Quantity Requested', 'Unit Price', 'Estimated Cost', 'Justification',
+                'Mode', 'Purchase Link', 'Requested By', 'Required By'
+            ]
+            items_df = items_df[column_order]
             
             buffer = io.BytesIO()
             items_df.to_excel(buffer, index=False, engine='openpyxl')
@@ -866,6 +878,8 @@ def view_procurement():
                 st.session_state.procurement_step = 1
                 st.session_state.selected_items = []
                 st.session_state.procurement_details = {}
+                st.session_state.global_justification = ""
+                st.session_state.item_justifications = {}
                 st.rerun()
     
     # History Tab
@@ -887,27 +901,38 @@ def view_procurement():
                     st.write(f"**Total Items:** {po['total_items']}")
                     st.write(f"**Mode:** {po['mode']}")
                     
-                    # Show Items
                     if po['items_json']:
                         items = json.loads(po['items_json'])
                         items_df = pd.DataFrame(items)
                         st.dataframe(items_df, use_container_width=True)
                     
+                    col_dl, col_del = st.columns([3, 1])
+                    
                     # Re-download option
-                    if po['items_json']:
-                        items_df = pd.DataFrame(items)
-                        items_df.insert(0, 'PO Number', po['po_number'])
-                        
-                        buff = io.BytesIO()
-                        items_df.to_excel(buff, index=False, engine='openpyxl')
-                        buff.seek(0)
-                        
-                        st.download_button(
-                            f"📥 Re-download {po['po_number']}",
-                            buff,
-                            f"{po['po_number'].replace('/', '_')}.xlsx",
-                            key=f"dl_{po['id']}"
-                        )
+                    with col_dl:
+                        if po['items_json']:
+                            items_df = pd.DataFrame(items)
+                            items_df.insert(0, 'PO Number', po['po_number'])
+                            
+                            buff = io.BytesIO()
+                            items_df.to_excel(buff, index=False, engine='openpyxl')
+                            buff.seek(0)
+                            
+                            st.download_button(
+                                f"📥 Re-download",
+                                buff,
+                                f"{po['po_number'].replace('/', '_')}.xlsx",
+                                key=f"dl_{po['id']}"
+                            )
+                    
+                    # Delete option
+                    with col_del:
+                        if st.button(f"🗑️ Delete", key=f"del_{po['id']}", type="secondary"):
+                            run_query("DELETE FROM purchase_orders WHERE id = ?", (po['id'],))
+                            log_activity("Procurement Deleted", f"Deleted PO: {po['po_number']}")
+                            st.success(f"Deleted {po['po_number']}")
+                            time.sleep(1)
+                            st.rerun()
 
 def view_users():
     st.title("👥 User & Role Management")
@@ -1064,9 +1089,12 @@ def main():
                 if p in perms:
                     if st.button(f"{icon} {p}", use_container_width=True):
                         st.session_state.current_view = p
-                        # Reset procurement workflow on nav
                         if p == "Procurement List":
                             st.session_state.procurement_step = 1
+                            st.session_state.selected_items = []
+                            st.session_state.procurement_details = {}
+                            st.session_state.global_justification = ""
+                            st.session_state.item_justifications = {}
                         st.rerun()
                         
             st.markdown("---")
