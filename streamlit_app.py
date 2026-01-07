@@ -56,13 +56,19 @@ st.markdown(f"""
     }}
     
     .login-card {{
-        background: white; padding: 2rem; border-radius: 1.5rem;
+        background: white; padding: 2.5rem; border-radius: 1.5rem;
         box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
         width: 100%; max-width: 450px; border-top: 8px solid {current_theme['primary']};
     }}
     .login-header {{ text-align: center; margin-bottom: 2rem; }}
     .login-header h1 {{ color: {current_theme['primary']}; font-weight: 800; font-size: 2.5rem; margin: 0; }}
     .login-header p {{ color: #6b7280; font-size: 0.95rem; margin-top: 0.5rem; }}
+    
+    .logo-icon {{
+        font-size: 80px;
+        color: {current_theme['primary']};
+        margin-bottom: 20px;
+    }}
     
     .footer {{
         position: fixed; bottom: 0; left: 0; width: 100%;
@@ -75,7 +81,14 @@ st.markdown(f"""
         background: #f9fafb; padding: 10px 15px; border-radius: 8px;
         margin-bottom: 8px; border-left: 4px solid {current_theme['primary']};
     }}
+    
+    .procurement-item {{
+        background: white; padding: 15px; border-radius: 10px;
+        border: 1px solid #e5e7eb; margin-bottom: 10px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }}
 </style>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 """, unsafe_allow_html=True)
 
 # --- DATABASE ENGINE ---
@@ -142,10 +155,10 @@ def init_db():
     # Seed Roles
     c.execute("SELECT count(*) FROM roles")
     if c.fetchone()[0] == 0:
-        all_perms = json.dumps(["Dashboard", "Inventory", "Stock Operations", "Reports", "Shopping List", "User Management", "Audit Logs", "Settings"])
+        all_perms = json.dumps(["Dashboard", "Inventory", "Stock Operations", "Reports", "Procurement List", "User Management", "Audit Logs", "Settings"])
         c.execute("INSERT INTO roles (name, permissions) VALUES (?, ?)", ('admin', all_perms))
         
-        asst_perms = json.dumps(["Dashboard", "Inventory", "Stock Operations", "Reports", "Shopping List"])
+        asst_perms = json.dumps(["Dashboard", "Inventory", "Stock Operations", "Reports", "Procurement List"])
         c.execute("INSERT INTO roles (name, permissions) VALUES (?, ?)", ('assistant', asst_perms))
         conn.commit()
 
@@ -285,7 +298,6 @@ def view_reports():
         with st.expander(f"📂 Year: {year}", expanded=(year==max(years))):
             year_data = df[df['year'] == year]
             
-            # Annual Report
             buffer_annual = io.BytesIO()
             year_data.to_excel(buffer_annual, index=False, engine='openpyxl')
             buffer_annual.seek(0)
@@ -363,6 +375,7 @@ def view_profile():
                 time.sleep(1)
                 st.rerun()
 
+# --- LANDING PAGE WITH LOGO ---
 def landing_page():
     col1, col2, col3 = st.columns([1, 2, 1])
     
@@ -370,6 +383,7 @@ def landing_page():
         st.markdown(f"""
             <div class="login-card">
                 <div class="login-header">
+                    <i class="fa-solid fa-robot logo-icon"></i>
                     <h1>TSRS</h1>
                     <p>Robotics Lab Inventory System</p>
                 </div>
@@ -447,7 +461,6 @@ def view_inventory():
                 st.success(f"Imported {count} items!")
                 st.rerun()
 
-# --- REVAMPED STOCK OPERATIONS ---
 def view_stock_ops():
     st.title("🔄 Stock Operations")
     
@@ -456,7 +469,6 @@ def view_stock_ops():
         st.warning("No items in inventory. Add items first.")
         return
     
-    # Stock In and Out Forms
     col_in, col_out = st.columns(2)
     
     with col_in:
@@ -486,7 +498,6 @@ def view_stock_ops():
             notes_out = st.text_input("Notes (e.g., Project Name)", key="out_notes")
             
             if st.form_submit_button("➖ Remove Stock", use_container_width=True):
-                # Check available quantity
                 current_qty = df[df['name'] == item_out]['quantity'].values[0]
                 if qty_out > current_qty:
                     st.error(f"Insufficient stock! Available: {current_qty}")
@@ -500,7 +511,6 @@ def view_stock_ops():
                     st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # Recent Activity Section
     st.markdown("---")
     st.subheader("📋 Recent Stock Activity")
     
@@ -522,23 +532,120 @@ def view_stock_ops():
                 </div>
             """, unsafe_allow_html=True)
 
-def view_shopping():
-    st.title("🛒 Shopping List")
+# --- REVAMPED PROCUREMENT LIST ---
+def view_procurement():
+    st.title("🛒 Procurement List")
+    st.caption("Generate a procurement request for items below minimum stock levels.")
+    
+    # Get low stock items
     df = pd.read_sql_query("SELECT * FROM inventory WHERE quantity < min_stock", get_db_connection())
     
     if df.empty:
-        st.success("All items are well-stocked!")
-    else:
-        st.warning(f"{len(df)} items need restocking")
-        st.dataframe(df, use_container_width=True)
+        st.success("✅ All items are well-stocked! No procurement needed.")
+        return
+    
+    st.warning(f"⚠️ {len(df)} items are below minimum stock level.")
+    
+    # Initialize session state for procurement data
+    if 'procurement_data' not in st.session_state:
+        st.session_state.procurement_data = {}
+    
+    st.markdown("---")
+    st.subheader("📝 Fill Procurement Details")
+    
+    # Global fields
+    col1, col2 = st.columns(2)
+    with col1:
+        requested_by = st.text_input("Requested By", value=st.session_state.user['name'])
+    with col2:
+        required_by_date = st.date_input("Required By Date", value=datetime.now() + timedelta(days=7))
+    
+    st.markdown("---")
+    
+    # Item-wise form
+    procurement_items = []
+    
+    for idx, row in df.iterrows():
+        item_name = row['name']
+        shortage = row['min_stock'] - row['quantity']
+        
+        st.markdown(f"""
+            <div class="procurement-item">
+                <strong style="color:{current_theme['primary']};">📦 {item_name}</strong>
+                <span style="float:right; background:#fef2f2; color:#dc2626; padding:2px 8px; border-radius:10px; font-size:12px;">
+                    Shortage: {shortage}
+                </span>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        col1, col2, col3 = st.columns([1, 1, 2])
+        
+        with col1:
+            qty = st.number_input(f"Quantity", min_value=1, value=int(shortage), key=f"qty_{idx}")
+        
+        with col2:
+            mode = st.selectbox("Mode", ["Online", "Offline"], key=f"mode_{idx}")
+        
+        with col3:
+            if mode == "Online":
+                link = st.text_input("Purchase Link", placeholder="https://...", key=f"link_{idx}")
+            else:
+                link = ""
+        
+        justification = st.text_area("Justification", placeholder="Why is this item needed?", key=f"just_{idx}", height=68)
+        
+        procurement_items.append({
+            "Item Name": item_name,
+            "Current Stock": row['quantity'],
+            "Min Stock": row['min_stock'],
+            "Quantity Requested": qty,
+            "Justification": justification,
+            "Mode": mode,
+            "Purchase Link": link if mode == "Online" else "N/A",
+            "Requested By": requested_by,
+            "Required By": str(required_by_date)
+        })
+        
+        st.markdown("---")
+    
+    # Generate Excel
+    st.subheader("📤 Generate Procurement Request")
+    
+    if st.button("Generate Excel for Admin", type="primary", use_container_width=True):
+        # Create DataFrame
+        procurement_df = pd.DataFrame(procurement_items)
+        
+        # Create Excel file
+        buffer = io.BytesIO()
+        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+            procurement_df.to_excel(writer, sheet_name='Procurement Request', index=False)
+            
+            # Auto-adjust column width
+            worksheet = writer.sheets['Procurement Request']
+            for i, col in enumerate(procurement_df.columns):
+                max_length = max(len(str(col)), procurement_df[col].astype(str).map(len).max())
+                worksheet.column_dimensions[chr(65 + i)].width = min(max_length + 2, 50)
+        
+        buffer.seek(0)
+        
+        # Log activity
+        log_activity("Procurement Request", f"Generated procurement request for {len(procurement_items)} items")
+        
+        # Download button
+        st.download_button(
+            label="📥 Download Procurement Request Excel",
+            data=buffer,
+            file_name=f"Procurement_Request_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+        
+        st.success("✅ Procurement request generated! Download and send to Admin for approval.")
 
-# --- REVAMPED USER MANAGEMENT ---
 def view_users():
     st.title("👥 User & Role Management")
     
     tab_users, tab_roles = st.tabs(["👤 Manage Users", "🔐 Manage Roles"])
     
-    # --- USERS TAB ---
     with tab_users:
         users_df = pd.read_sql_query("SELECT emp_id, name, role FROM users", get_db_connection())
         st.dataframe(users_df, use_container_width=True)
@@ -590,13 +697,11 @@ def view_users():
                             st.success("Updated!")
                             st.rerun()
 
-    # --- ROLES TAB ---
     with tab_roles:
         st.info("Define custom roles and select which pages each role can access.")
         
-        ALL_PAGES = ["Dashboard", "Inventory", "Stock Operations", "Reports", "Shopping List", "User Management", "Audit Logs", "Settings"]
+        ALL_PAGES = ["Dashboard", "Inventory", "Stock Operations", "Reports", "Procurement List", "User Management", "Audit Logs", "Settings"]
         
-        # Existing Roles
         roles_data = run_query("SELECT * FROM roles", fetch=True)
         
         for role in roles_data:
@@ -619,7 +724,6 @@ def view_users():
                         st.success("Permissions updated!")
                         st.rerun()
 
-        # Create New Role
         st.markdown("---")
         with st.form("new_role_form"):
             st.subheader("➕ Create New Role")
@@ -670,9 +774,10 @@ def main():
             st.markdown(f"<div style='text-align:center'><b>{st.session_state.user['name']}</b><br><small>{st.session_state.user['role'].upper()}</small></div>", unsafe_allow_html=True)
             st.markdown("---")
             
+            # Updated nav_map with Procurement List
             nav_map = {
                 "Dashboard": "📊", "Inventory": "📦", "Stock Operations": "🔄", 
-                "Reports": "📑", "Audit Logs": "🛡️", "Shopping List": "🛒", 
+                "Reports": "📑", "Audit Logs": "🛡️", "Procurement List": "🛒", 
                 "User Management": "👥", "Settings": "⚙️"
             }
             
@@ -700,7 +805,7 @@ def main():
         elif v == "Stock Operations" and v in perms: view_stock_ops()
         elif v == "Reports" and v in perms: view_reports()
         elif v == "Audit Logs" and v in perms: view_audit_logs()
-        elif v == "Shopping List" and v in perms: view_shopping()
+        elif v == "Procurement List" and v in perms: view_procurement()
         elif v == "User Management" and v in perms: view_users()
         elif v == "Settings" and v in perms: view_settings()
         elif v not in perms: st.error("⛔ Access Denied")
