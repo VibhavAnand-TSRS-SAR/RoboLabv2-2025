@@ -47,44 +47,33 @@ st.markdown(f"""
         font-family: 'Inter', sans-serif;
     }}
     
-    /* Sidebar */
     section[data-testid="stSidebar"] {{ background-color: {current_theme['bg_sidebar']}; }}
     
-    .nav-btn {{
-        width: 100%; text-align: left; padding: 12px 15px; margin: 5px 0;
-        border: none; border-radius: 8px; background-color: transparent;
-        color: {current_theme['text_sidebar']}; font-size: 16px; cursor: pointer;
-        display: flex; align-items: center; gap: 10px; transition: all 0.3s ease;
-    }}
-    .nav-btn:hover {{ background-color: {current_theme['hover']}; transform: translateX(5px); }}
-    
-    /* Metrics */
     div[data-testid="stMetric"] {{
         background-color: white; padding: 20px; border-radius: 12px;
         border-left: 5px solid {current_theme['primary']};
         box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
     }}
     
-    /* Login Page Styling */
-    .login-container {{
-        display: flex; justify-content: center; align-items: center;
-        height: 80vh; background-color: #f3f4f6;
-    }}
     .login-card {{
         background: white; padding: 2rem; border-radius: 1.5rem;
-        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
         width: 100%; max-width: 450px; border-top: 8px solid {current_theme['primary']};
     }}
     .login-header {{ text-align: center; margin-bottom: 2rem; }}
     .login-header h1 {{ color: {current_theme['primary']}; font-weight: 800; font-size: 2.5rem; margin: 0; }}
     .login-header p {{ color: #6b7280; font-size: 0.95rem; margin-top: 0.5rem; }}
     
-    /* Footer */
     .footer {{
         position: fixed; bottom: 0; left: 0; width: 100%;
         background-color: white; text-align: center; padding: 10px;
         font-size: 12px; color: #9CA3AF; border-top: 1px solid #E5E7EB;
         z-index: 999;
+    }}
+    
+    .activity-card {{
+        background: #f9fafb; padding: 10px 15px; border-radius: 8px;
+        margin-bottom: 8px; border-left: 4px solid {current_theme['primary']};
     }}
 </style>
 """, unsafe_allow_html=True)
@@ -100,7 +89,6 @@ def init_db():
     conn = get_db_connection()
     c = conn.cursor()
     
-    # 1. Users (Added profile_pic)
     c.execute('''CREATE TABLE IF NOT EXISTS users (
                  id INTEGER PRIMARY KEY AUTOINCREMENT,
                  emp_id TEXT UNIQUE NOT NULL,
@@ -110,19 +98,16 @@ def init_db():
                  dob TEXT, gender TEXT, address TEXT, phone TEXT,
                  profile_pic TEXT)''')
     
-    # Migration for older DBs
     try:
         c.execute("SELECT profile_pic FROM users LIMIT 1")
     except sqlite3.OperationalError:
         c.execute("ALTER TABLE users ADD COLUMN profile_pic TEXT")
         conn.commit()
 
-    # 2. Roles
     c.execute('''CREATE TABLE IF NOT EXISTS roles (
                  name TEXT PRIMARY KEY,
                  permissions TEXT)''')
     
-    # 3. Inventory
     c.execute('''CREATE TABLE IF NOT EXISTS inventory (
                  id INTEGER PRIMARY KEY AUTOINCREMENT,
                  name TEXT NOT NULL,
@@ -132,7 +117,6 @@ def init_db():
                  min_stock INTEGER DEFAULT 5,
                  price REAL DEFAULT 0.0)''')
     
-    # 4. Transactions
     c.execute('''CREATE TABLE IF NOT EXISTS transactions (
                  id INTEGER PRIMARY KEY AUTOINCREMENT,
                  item_id INTEGER,
@@ -143,13 +127,11 @@ def init_db():
                  timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
                  notes TEXT)''')
     
-    # 5. Sessions
     c.execute('''CREATE TABLE IF NOT EXISTS sessions (
                  token TEXT PRIMARY KEY,
                  user_id INTEGER,
                  expires_at DATETIME)''')
     
-    # 6. Activity Logs (New Feature for Admin)
     c.execute('''CREATE TABLE IF NOT EXISTS activity_logs (
                  id INTEGER PRIMARY KEY AUTOINCREMENT,
                  user_name TEXT,
@@ -157,18 +139,17 @@ def init_db():
                  details TEXT,
                  timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)''')
 
-    # Seed Data
+    # Seed Roles
     c.execute("SELECT count(*) FROM roles")
     if c.fetchone()[0] == 0:
-        # Admin: All permissions + 'Audit Logs'
         all_perms = json.dumps(["Dashboard", "Inventory", "Stock Operations", "Reports", "Shopping List", "User Management", "Audit Logs", "Settings"])
         c.execute("INSERT INTO roles (name, permissions) VALUES (?, ?)", ('admin', all_perms))
         
-        # Assistant: Basic permissions
         asst_perms = json.dumps(["Dashboard", "Inventory", "Stock Operations", "Reports", "Shopping List"])
         c.execute("INSERT INTO roles (name, permissions) VALUES (?, ?)", ('assistant', asst_perms))
         conn.commit()
 
+    # Seed Users
     c.execute("SELECT count(*) FROM users")
     if c.fetchone()[0] == 0:
         c.execute("INSERT INTO users (emp_id, name, password, role) VALUES (?, ?, ?, ?)", ('admin', 'System Admin', 'admin123', 'admin'))
@@ -191,16 +172,14 @@ def run_query(query, params=(), fetch=False):
         return True
     except Exception as e:
         conn.close()
+        st.error(f"DB Error: {e}")
         return False
 
-# --- LOGGING HELPER ---
 def log_activity(action, details):
     if 'user' in st.session_state and st.session_state.user:
-        user_name = st.session_state.user['name']
         run_query("INSERT INTO activity_logs (user_name, action, details) VALUES (?, ?, ?)", 
-                  (user_name, action, details))
+                  (st.session_state.user['name'], action, details))
 
-# --- IMAGE UTILS ---
 def get_image_base64(image_file):
     if image_file is not None:
         return base64.b64encode(image_file.read()).decode()
@@ -209,9 +188,8 @@ def get_image_base64(image_file):
 def image_from_base64(base64_str):
     if base64_str:
         return f"data:image/png;base64,{base64_str}"
-    return "https://www.w3schools.com/howto/img_avatar.png" # Default avatar
+    return "https://www.w3schools.com/howto/img_avatar.png"
 
-# --- AUTH ---
 def create_session(user_id):
     token = str(uuid.uuid4())
     expiry = datetime.now() + timedelta(minutes=5)
@@ -222,8 +200,7 @@ def validate_session(token):
     run_query("DELETE FROM sessions WHERE expires_at < ?", (datetime.now(),))
     data = run_query("SELECT user_id FROM sessions WHERE token = ? AND expires_at > ?", (token, datetime.now()), fetch=True)
     if data:
-        new_expiry = datetime.now() + timedelta(minutes=5)
-        run_query("UPDATE sessions SET expires_at = ? WHERE token = ?", (new_expiry, token))
+        run_query("UPDATE sessions SET expires_at = ? WHERE token = ?", (datetime.now() + timedelta(minutes=5), token))
         return run_query("SELECT * FROM users WHERE id = ?", (data[0]['user_id'],), fetch=True)[0]
     return None
 
@@ -232,7 +209,6 @@ def logout_user():
         run_query("DELETE FROM sessions WHERE token = ?", (st.query_params['session_token'],))
     st.query_params.clear()
     st.session_state.user = None
-    log_activity("Logout", "User logged out")
     st.rerun()
 
 # --- VIEWS ---
@@ -240,7 +216,6 @@ def logout_user():
 def view_dashboard():
     role = st.session_state.user['role']
     
-    # 1. ADMIN DASHBOARD
     if role == 'admin':
         st.title("📊 Master Dashboard")
         df = pd.read_sql_query("SELECT * FROM inventory", get_db_connection())
@@ -267,19 +242,14 @@ def view_dashboard():
             st.subheader("System Logs")
             logs = pd.read_sql_query("SELECT user_name, action, timestamp FROM activity_logs ORDER BY timestamp DESC LIMIT 5", get_db_connection())
             st.dataframe(logs, use_container_width=True, hide_index=True)
-
-    # 2. USER DASHBOARD (Personalized)
     else:
         st.title(f"👋 Welcome, {st.session_state.user['name']}")
-        
-        # User Specific Stats
         conn = get_db_connection()
         my_trans = pd.read_sql_query("SELECT * FROM transactions WHERE user = ? ORDER BY timestamp DESC", conn, params=(st.session_state.user['name'],))
         conn.close()
         
         c1, c2 = st.columns(2)
         c1.metric("My Transactions", len(my_trans))
-        
         last_active = my_trans.iloc[0]['timestamp'] if not my_trans.empty else "N/A"
         c2.metric("Last Active", str(last_active)[:10])
         
@@ -287,61 +257,54 @@ def view_dashboard():
         if not my_trans.empty:
             st.dataframe(my_trans[['timestamp', 'type', 'item_name', 'quantity', 'notes']].head(10), use_container_width=True)
         else:
-            st.info("You haven't performed any stock operations yet.")
+            st.info("No activity yet.")
 
 def view_audit_logs():
-    st.title("🛡️ Audit Logs (Admin Only)")
-    st.info("Tracking all system changes: Logins, Inventory updates, User changes.")
-    
+    st.title("🛡️ Audit Logs")
     df = pd.read_sql_query("SELECT timestamp, user_name, action, details FROM activity_logs ORDER BY timestamp DESC", get_db_connection())
     st.dataframe(df, use_container_width=True)
 
 def view_reports():
-    st.title("📑 Financial Reports")
+    st.title("📑 Reports")
     
     conn = get_db_connection()
     df = pd.read_sql_query("SELECT * FROM transactions", conn)
     conn.close()
     
     if df.empty:
-        st.warning("No data available for reports.")
+        st.warning("No transaction data available.")
         return
 
     df['timestamp'] = pd.to_datetime(df['timestamp'])
     df['year'] = df['timestamp'].dt.year
-    df['month'] = df['timestamp'].dt.month_name()
     df['month_num'] = df['timestamp'].dt.month
     
-    # Get available years in reverse order
     years = sorted(df['year'].unique(), reverse=True)
     
     for year in years:
         with st.expander(f"📂 Year: {year}", expanded=(year==max(years))):
             year_data = df[df['year'] == year]
             
-            # Annual Download
+            # Annual Report
             buffer_annual = io.BytesIO()
-            with pd.ExcelWriter(buffer_annual, engine='xlsxwriter') as writer:
-                year_data.to_excel(writer, sheet_name='Annual', index=False)
+            year_data.to_excel(buffer_annual, index=False, engine='openpyxl')
+            buffer_annual.seek(0)
             
             col_main, col_months = st.columns([1, 3])
             with col_main:
-                st.download_button(f"📥 Download Annual Report {year}", buffer_annual, f"Annual_Report_{year}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                st.download_button(f"📥 Annual {year}", buffer_annual, f"Annual_{year}.xlsx")
                 
             with col_months:
-                st.write("**Monthly Breakdown (Reverse Order)**")
-                # Months reversed (Dec -> Jan)
+                st.write("**Monthly Reports:**")
                 months_in_year = sorted(year_data['month_num'].unique(), reverse=True)
-                
                 cols = st.columns(4)
                 for i, m_num in enumerate(months_in_year):
                     month_name = datetime(2000, m_num, 1).strftime('%B')
                     month_data = year_data[year_data['month_num'] == m_num]
                     
                     buff = io.BytesIO()
-                    with pd.ExcelWriter(buff, engine='xlsxwriter') as w:
-                        month_data.to_excel(w, sheet_name=month_name, index=False)
-                        
+                    month_data.to_excel(buff, index=False, engine='openpyxl')
+                    buff.seek(0)
                     cols[i%4].download_button(f"📄 {month_name}", buff, f"{year}_{month_name}.xlsx")
 
 def view_profile():
@@ -351,15 +314,9 @@ def view_profile():
     col_img, col_form = st.columns([1, 2])
     
     with col_img:
-        # Display Profile Pic
         img_src = image_from_base64(user['profile_pic'])
-        st.markdown(f"""
-            <div style="text-align:center;">
-                <img src="{img_src}" style="width:150px; height:150px; object-fit:cover; border-radius:50%; border: 4px solid {current_theme['primary']};">
-            </div>
-        """, unsafe_allow_html=True)
+        st.markdown(f"<div style='text-align:center;'><img src='{img_src}' style='width:150px; height:150px; object-fit:cover; border-radius:50%; border: 4px solid {current_theme['primary']};'></div>", unsafe_allow_html=True)
         
-        # Upload New Pic
         new_pic = st.file_uploader("Change Photo", type=['png', 'jpg', 'jpeg'])
         if new_pic:
             b64_pic = get_image_base64(new_pic)
@@ -373,22 +330,19 @@ def view_profile():
             st.subheader("Basic Details")
             c1, c2 = st.columns(2)
             
-            # Fetch fresh
             curr = run_query("SELECT * FROM users WHERE id=?", (user['id'],), fetch=True)[0]
             
             name = c1.text_input("Full Name", value=curr['name'])
             password = c2.text_input("New Password (Optional)", type="password")
             
-            # BUG FIX: Handle invalid date formats from DB
             dob_val = None
             if curr['dob']:
                 try:
                     dob_val = datetime.strptime(curr['dob'], '%Y-%m-%d')
-                except (ValueError, TypeError):
+                except:
                     dob_val = None
 
             dob = c1.date_input("Date of Birth", value=dob_val)
-            
             gender = c2.selectbox("Gender", ["Male", "Female", "Other"], index=["Male", "Female", "Other"].index(curr['gender']) if curr['gender'] in ["Male", "Female", "Other"] else 0)
             phone = c1.text_input("Phone", value=curr['phone'] if curr['phone'] else "")
             address = c2.text_area("Address", value=curr['address'] if curr['address'] else "")
@@ -403,17 +357,13 @@ def view_profile():
                 p.append(user['id'])
                 
                 run_query(q, tuple(p))
-                
-                # Update Session
                 st.session_state.user['name'] = name
                 log_activity("Profile Update", "Updated personal details")
                 st.success("Profile Updated")
                 time.sleep(1)
                 st.rerun()
 
-# --- LANDING PAGE ---
 def landing_page():
-    # Modern Login Interface
     col1, col2, col3 = st.columns([1, 2, 1])
     
     with col2:
@@ -443,33 +393,25 @@ def landing_page():
                 else:
                     st.error("Invalid Credentials")
 
-    st.markdown("""
-        <div class="footer">
-            Created by <b>Blackquest</b>
-        </div>
-    """, unsafe_allow_html=True)
+    st.markdown("<div class='footer'>Created by <b>Blackquest</b></div>", unsafe_allow_html=True)
 
-# --- INVENTORY VIEW WITH BULK UPLOAD (EXCEL) ---
 def view_inventory():
     st.title("📦 Inventory Management")
     
-    tab1, tab2, tab3 = st.tabs(["🔎 View Inventory", "➕ Add Single Item", "📂 Bulk Upload (Excel)"])
+    tab1, tab2, tab3 = st.tabs(["🔎 View", "➕ Add Item", "📂 Bulk Upload"])
     
-    # 1. VIEW TAB
     with tab1:
         df = pd.read_sql_query("SELECT * FROM inventory", get_db_connection())
         st.dataframe(df, use_container_width=True)
         
-        if st.session_state.user['role'] == 'admin':
+        if st.session_state.user['role'] == 'admin' and not df.empty:
             with st.expander("🗑️ Delete Item"):
-                if not df.empty:
-                    del_name = st.selectbox("Select Item", df['name'].tolist())
-                    if st.button("Delete Item"):
-                        run_query("DELETE FROM inventory WHERE name = ?", (del_name,))
-                        log_activity("Delete Item", f"Deleted {del_name}")
-                        st.rerun()
+                del_name = st.selectbox("Select Item", df['name'].tolist())
+                if st.button("Delete"):
+                    run_query("DELETE FROM inventory WHERE name = ?", (del_name,))
+                    log_activity("Delete", f"Deleted {del_name}")
+                    st.rerun()
 
-    # 2. ADD TAB
     with tab2:
         with st.form("add_i"):
             n = st.text_input("Name")
@@ -482,132 +424,258 @@ def view_inventory():
             if st.form_submit_button("Add Item"):
                 run_query("INSERT INTO inventory (name, category, quantity, min_stock, price, location) VALUES (?,?,?,?,?,?)", (n,c,q,ms,p,l))
                 log_activity("Inventory", f"Added item {n}")
-                st.success("Item Added")
-                time.sleep(1)
+                st.success("Added!")
                 st.rerun()
 
-    # 3. UPLOAD TAB (EXCEL)
     with tab3:
-        st.subheader("Import Data via Excel")
-        st.markdown("""
-        **Instructions:**
-        1. Upload a `.xlsx` file.
-        2. Required Columns: `name`, `category`, `quantity`, `price`
-        3. Optional Columns: `min_stock`, `location`
-        """)
-        
-        uploaded_file = st.file_uploader("Choose Excel File", type=['xlsx'])
+        st.markdown("**Upload Excel (.xlsx)** with columns: `name`, `category`, `quantity`, `price`, `min_stock`, `location`")
+        uploaded_file = st.file_uploader("Choose File", type=['xlsx'])
         
         if uploaded_file:
-            try:
-                # Read Excel
-                df_upload = pd.read_excel(uploaded_file)
-                st.write("Preview:")
-                st.dataframe(df_upload.head())
-                
-                # Check column headers (case insensitive handling)
-                cols = [c.lower() for c in df_upload.columns]
-                
-                if st.button("Confirm Import"):
-                    count = 0
-                    for index, row in df_upload.iterrows():
-                        # Normalize row keys to lowercase for matching
-                        row_lower = {k.lower(): v for k, v in row.items()}
-                        
-                        if 'name' in row_lower and pd.notna(row_lower['name']):
-                            name = row_lower['name']
-                            cat = row_lower.get('category', 'Others')
-                            qty = row_lower.get('quantity', 0)
-                            price = row_lower.get('price', 0.0)
-                            ms = row_lower.get('min_stock', 5)
-                            loc = row_lower.get('location', 'Unknown')
-                            
-                            # Insert into DB
-                            run_query("INSERT INTO inventory (name, category, quantity, min_stock, price, location) VALUES (?,?,?,?,?,?)", 
-                                      (name, cat, qty, ms, price, loc))
-                            count += 1
-                    
-                    log_activity("Bulk Upload", f"Imported {count} items via Excel")
-                    st.success(f"Successfully added {count} items to the database.")
-                    time.sleep(2)
-                    st.rerun()
-            except Exception as e:
-                st.error(f"Error reading Excel file: {e}")
+            df_upload = pd.read_excel(uploaded_file)
+            st.dataframe(df_upload.head())
+            
+            if st.button("Confirm Import"):
+                count = 0
+                for _, row in df_upload.iterrows():
+                    row_lower = {k.lower(): v for k, v in row.items()}
+                    if 'name' in row_lower and pd.notna(row_lower['name']):
+                        run_query("INSERT INTO inventory (name, category, quantity, min_stock, price, location) VALUES (?,?,?,?,?,?)", 
+                                  (row_lower['name'], row_lower.get('category', 'Others'), row_lower.get('quantity', 0), row_lower.get('min_stock', 5), row_lower.get('price', 0.0), row_lower.get('location', 'Unknown')))
+                        count += 1
+                log_activity("Bulk Upload", f"Imported {count} items")
+                st.success(f"Imported {count} items!")
+                st.rerun()
 
+# --- REVAMPED STOCK OPERATIONS ---
 def view_stock_ops():
     st.title("🔄 Stock Operations")
-    df = pd.read_sql_query("SELECT * FROM inventory", get_db_connection())
-    if df.empty: return
     
-    c1, c2 = st.columns(2)
-    with c1:
-        with st.form("in"):
-            i = st.selectbox("Item", df['name'])
-            q = st.number_input("Qty", 1)
-            if st.form_submit_button("Stock In"):
-                run_query("UPDATE inventory SET quantity = quantity + ? WHERE name = ?", (q, i))
-                run_query("INSERT INTO transactions (item_name, type, quantity, user) VALUES (?,?,?,?)", (i,'in',q,st.session_state.user['name']))
-                log_activity("Stock In", f"Added {q} to {i}")
-                st.success("Updated"); st.rerun()
-    with c2:
-        with st.form("out"):
-            i = st.selectbox("Item", df['name'], key='o')
-            q = st.number_input("Qty", 1)
-            if st.form_submit_button("Stock Out"):
-                run_query("UPDATE inventory SET quantity = quantity - ? WHERE name = ?", (q, i))
-                run_query("INSERT INTO transactions (item_name, type, quantity, user) VALUES (?,?,?,?)", (i,'out',q,st.session_state.user['name']))
-                log_activity("Stock Out", f"Removed {q} from {i}")
-                st.success("Updated"); st.rerun()
+    df = pd.read_sql_query("SELECT * FROM inventory", get_db_connection())
+    if df.empty:
+        st.warning("No items in inventory. Add items first.")
+        return
+    
+    # Stock In and Out Forms
+    col_in, col_out = st.columns(2)
+    
+    with col_in:
+        st.markdown(f"<div style='background:#ecfdf5; padding:20px; border-radius:12px; border:2px solid #10b981;'>", unsafe_allow_html=True)
+        st.subheader("📥 Stock In")
+        with st.form("stock_in_form"):
+            item_in = st.selectbox("Select Item", df['name'].tolist(), key="in_item")
+            qty_in = st.number_input("Quantity to Add", min_value=1, value=1, key="in_qty")
+            notes_in = st.text_input("Notes (e.g., Purchase Order #)", key="in_notes")
+            
+            if st.form_submit_button("➕ Add Stock", use_container_width=True):
+                run_query("UPDATE inventory SET quantity = quantity + ? WHERE name = ?", (qty_in, item_in))
+                run_query("INSERT INTO transactions (item_name, type, quantity, user, notes) VALUES (?,?,?,?,?)", 
+                          (item_in, 'in', qty_in, st.session_state.user['name'], notes_in))
+                log_activity("Stock In", f"Added {qty_in} to {item_in}")
+                st.success(f"Added {qty_in} units to {item_in}")
+                time.sleep(1)
+                st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    with col_out:
+        st.markdown(f"<div style='background:#fef2f2; padding:20px; border-radius:12px; border:2px solid #ef4444;'>", unsafe_allow_html=True)
+        st.subheader("📤 Stock Out")
+        with st.form("stock_out_form"):
+            item_out = st.selectbox("Select Item", df['name'].tolist(), key="out_item")
+            qty_out = st.number_input("Quantity to Remove", min_value=1, value=1, key="out_qty")
+            notes_out = st.text_input("Notes (e.g., Project Name)", key="out_notes")
+            
+            if st.form_submit_button("➖ Remove Stock", use_container_width=True):
+                # Check available quantity
+                current_qty = df[df['name'] == item_out]['quantity'].values[0]
+                if qty_out > current_qty:
+                    st.error(f"Insufficient stock! Available: {current_qty}")
+                else:
+                    run_query("UPDATE inventory SET quantity = quantity - ? WHERE name = ?", (qty_out, item_out))
+                    run_query("INSERT INTO transactions (item_name, type, quantity, user, notes) VALUES (?,?,?,?,?)", 
+                              (item_out, 'out', qty_out, st.session_state.user['name'], notes_out))
+                    log_activity("Stock Out", f"Removed {qty_out} from {item_out}")
+                    st.success(f"Removed {qty_out} units from {item_out}")
+                    time.sleep(1)
+                    st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # Recent Activity Section
+    st.markdown("---")
+    st.subheader("📋 Recent Stock Activity")
+    
+    recent_trans = pd.read_sql_query("SELECT timestamp, item_name, type, quantity, user, notes FROM transactions ORDER BY timestamp DESC LIMIT 10", get_db_connection())
+    
+    if recent_trans.empty:
+        st.info("No transactions recorded yet.")
+    else:
+        for _, row in recent_trans.iterrows():
+            icon = "📥" if row['type'] == 'in' else "📤"
+            color = "#10b981" if row['type'] == 'in' else "#ef4444"
+            action = "Added" if row['type'] == 'in' else "Removed"
+            
+            st.markdown(f"""
+                <div class="activity-card" style="border-left-color: {color};">
+                    <strong>{icon} {action} {row['quantity']} × {row['item_name']}</strong><br>
+                    <small style="color:#6b7280;">By {row['user']} | {row['timestamp']}</small>
+                    {f"<br><small style='color:#9ca3af;'>Note: {row['notes']}</small>" if row['notes'] else ""}
+                </div>
+            """, unsafe_allow_html=True)
 
 def view_shopping():
     st.title("🛒 Shopping List")
     df = pd.read_sql_query("SELECT * FROM inventory WHERE quantity < min_stock", get_db_connection())
-    st.dataframe(df)
+    
+    if df.empty:
+        st.success("All items are well-stocked!")
+    else:
+        st.warning(f"{len(df)} items need restocking")
+        st.dataframe(df, use_container_width=True)
 
+# --- REVAMPED USER MANAGEMENT ---
 def view_users():
-    st.title("👥 User Management")
-    df = pd.read_sql_query("SELECT emp_id, name, role FROM users", get_db_connection())
-    st.dataframe(df)
+    st.title("👥 User & Role Management")
+    
+    tab_users, tab_roles = st.tabs(["👤 Manage Users", "🔐 Manage Roles"])
+    
+    # --- USERS TAB ---
+    with tab_users:
+        users_df = pd.read_sql_query("SELECT emp_id, name, role FROM users", get_db_connection())
+        st.dataframe(users_df, use_container_width=True)
+        
+        col_add, col_edit = st.columns(2)
+        
+        with col_add:
+            with st.expander("➕ Add New User", expanded=False):
+                with st.form("create_user_form"):
+                    roles_list = [r['name'] for r in run_query("SELECT name FROM roles", fetch=True)]
+                    
+                    new_emp = st.text_input("Employee ID")
+                    new_name = st.text_input("Full Name")
+                    new_pass = st.text_input("Password", type="password")
+                    new_role = st.selectbox("Assign Role", roles_list)
+                    
+                    if st.form_submit_button("Create User"):
+                        if run_query("INSERT INTO users (emp_id, name, password, role) VALUES (?, ?, ?, ?)", (new_emp, new_name, new_pass, new_role)):
+                            log_activity("User Created", f"Created user {new_emp}")
+                            st.success("User created!")
+                            st.rerun()
+                        else:
+                            st.error("Error: Employee ID may already exist.")
+
+        with col_edit:
+            with st.expander("✏️ Edit User", expanded=False):
+                user_to_edit = st.selectbox("Select User", users_df['emp_id'].tolist())
+                
+                if user_to_edit:
+                    curr_user = run_query("SELECT * FROM users WHERE emp_id = ?", (user_to_edit,), fetch=True)[0]
+                    roles_list = [r['name'] for r in run_query("SELECT name FROM roles", fetch=True)]
+                    
+                    with st.form("edit_user_form"):
+                        edit_name = st.text_input("Name", value=curr_user['name'])
+                        edit_role = st.selectbox("Role", roles_list, index=roles_list.index(curr_user['role']) if curr_user['role'] in roles_list else 0)
+                        edit_pass = st.text_input("Reset Password (leave blank to keep)", type="password")
+                        
+                        if st.form_submit_button("Update User"):
+                            q = "UPDATE users SET name=?, role=?"
+                            p = [edit_name, edit_role]
+                            if edit_pass:
+                                q += ", password=?"
+                                p.append(edit_pass)
+                            q += " WHERE emp_id=?"
+                            p.append(user_to_edit)
+                            
+                            run_query(q, tuple(p))
+                            log_activity("User Updated", f"Updated user {user_to_edit}")
+                            st.success("Updated!")
+                            st.rerun()
+
+    # --- ROLES TAB ---
+    with tab_roles:
+        st.info("Define custom roles and select which pages each role can access.")
+        
+        ALL_PAGES = ["Dashboard", "Inventory", "Stock Operations", "Reports", "Shopping List", "User Management", "Audit Logs", "Settings"]
+        
+        # Existing Roles
+        roles_data = run_query("SELECT * FROM roles", fetch=True)
+        
+        for role in roles_data:
+            with st.expander(f"🔑 Role: {role['name'].upper()}", expanded=False):
+                current_perms = json.loads(role['permissions'])
+                
+                with st.form(f"edit_role_{role['name']}"):
+                    st.write(f"**Permissions for {role['name']}**")
+                    
+                    new_perms = []
+                    cols = st.columns(4)
+                    for i, page in enumerate(ALL_PAGES):
+                        with cols[i % 4]:
+                            if st.checkbox(page, value=(page in current_perms), key=f"perm_{role['name']}_{page}"):
+                                new_perms.append(page)
+                    
+                    if st.form_submit_button("Save Permissions"):
+                        run_query("UPDATE roles SET permissions = ? WHERE name = ?", (json.dumps(new_perms), role['name']))
+                        log_activity("Role Updated", f"Updated permissions for {role['name']}")
+                        st.success("Permissions updated!")
+                        st.rerun()
+
+        # Create New Role
+        st.markdown("---")
+        with st.form("new_role_form"):
+            st.subheader("➕ Create New Role")
+            new_role_name = st.text_input("Role Name (e.g., student_leader)").lower().replace(" ", "_")
+            
+            st.write("**Select Permissions:**")
+            nr_perms = []
+            cols = st.columns(4)
+            for i, page in enumerate(ALL_PAGES):
+                with cols[i % 4]:
+                    if st.checkbox(page, key=f"new_role_{page}"):
+                        nr_perms.append(page)
+            
+            if st.form_submit_button("Create Role"):
+                if new_role_name:
+                    run_query("INSERT INTO roles (name, permissions) VALUES (?, ?)", (new_role_name, json.dumps(nr_perms)))
+                    log_activity("Role Created", f"Created role {new_role_name}")
+                    st.success(f"Role '{new_role_name}' created!")
+                    st.rerun()
 
 def view_settings():
     st.title("⚙️ Settings")
     t = st.selectbox("Theme", list(THEMES.keys()))
     if t != st.session_state.theme:
-        st.session_state.theme = t; st.rerun()
+        st.session_state.theme = t
+        st.rerun()
 
 # --- MAIN ---
 def main():
     init_db()
     
-    # Session Restore
-    if 'user' not in st.session_state: st.session_state.user = None
+    if 'user' not in st.session_state:
+        st.session_state.user = None
     if st.session_state.user is None and 'session_token' in st.query_params:
         user = validate_session(st.query_params['session_token'])
-        if user: st.session_state.user = dict(user)
+        if user:
+            st.session_state.user = dict(user)
 
     if st.session_state.user is None:
         landing_page()
     else:
-        # Permission Handling
         perms_json = run_query("SELECT permissions FROM roles WHERE name = ?", (st.session_state.user['role'],), fetch=True)[0]['permissions']
         perms = json.loads(perms_json)
         
-        # Sidebar
         with st.sidebar:
-            # Profile Pic Mini
             img_src = image_from_base64(st.session_state.user['profile_pic'])
             st.markdown(f"<div style='text-align:center; margin-bottom:10px;'><img src='{img_src}' style='width:80px; height:80px; border-radius:50%; object-fit:cover; border:2px solid {current_theme['primary']};'></div>", unsafe_allow_html=True)
             st.markdown(f"<div style='text-align:center'><b>{st.session_state.user['name']}</b><br><small>{st.session_state.user['role'].upper()}</small></div>", unsafe_allow_html=True)
             st.markdown("---")
             
-            # Nav
             nav_map = {
                 "Dashboard": "📊", "Inventory": "📦", "Stock Operations": "🔄", 
                 "Reports": "📑", "Audit Logs": "🛡️", "Shopping List": "🛒", 
                 "User Management": "👥", "Settings": "⚙️"
             }
             
-            # Everyone sees Profile
             if st.button("👤 My Profile", use_container_width=True):
                 st.session_state.current_view = "My Profile"
                 st.rerun()
@@ -619,10 +687,11 @@ def main():
                         st.rerun()
                         
             st.markdown("---")
-            if st.button("🚪 Logout"): logout_user()
+            if st.button("🚪 Logout"):
+                logout_user()
 
-        # Route
-        if 'current_view' not in st.session_state: st.session_state.current_view = "Dashboard"
+        if 'current_view' not in st.session_state:
+            st.session_state.current_view = "Dashboard"
         v = st.session_state.current_view
         
         if v == "My Profile": view_profile()
