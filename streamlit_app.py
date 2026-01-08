@@ -182,15 +182,24 @@ def init_db():
                  name TEXT UNIQUE NOT NULL,
                  created_at DATETIME DEFAULT CURRENT_TIMESTAMP)''')
 
-    # --- NEW TABLES FOR KIT MANAGEMENT ---
+    # --- TABLES FOR KIT MANAGEMENT ---
+    # added in_circulation to kits for Fix #4
     c.execute('''CREATE TABLE IF NOT EXISTS kits (
                  id INTEGER PRIMARY KEY AUTOINCREMENT,
                  kit_ref TEXT UNIQUE NOT NULL,
                  name TEXT NOT NULL,
                  description TEXT,
                  created_by TEXT,
+                 in_circulation INTEGER DEFAULT 0,
                  created_at DATETIME DEFAULT CURRENT_TIMESTAMP)''')
     
+    # Migration: Add in_circulation if missing
+    try:
+        c.execute("SELECT in_circulation FROM kits LIMIT 1")
+    except sqlite3.OperationalError:
+        c.execute("ALTER TABLE kits ADD COLUMN in_circulation INTEGER DEFAULT 0")
+        conn.commit()
+
     c.execute('''CREATE TABLE IF NOT EXISTS kit_items (
                  id INTEGER PRIMARY KEY AUTOINCREMENT,
                  kit_id INTEGER,
@@ -202,7 +211,15 @@ def init_db():
                  kit_ref TEXT,
                  action TEXT,
                  user TEXT,
+                 qty_changed INTEGER,
                  timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)''')
+    
+    # Migration for kit_history
+    try:
+        c.execute("SELECT qty_changed FROM kit_history LIMIT 1")
+    except sqlite3.OperationalError:
+        c.execute("ALTER TABLE kit_history ADD COLUMN qty_changed INTEGER DEFAULT 1")
+        conn.commit()
 
     # Seed Default Categories
     c.execute("SELECT count(*) FROM categories")
@@ -217,17 +234,13 @@ def init_db():
     if c.fetchone()[0] == 0:
         all_perms = json.dumps(["Dashboard", "Inventory", "Stock Operations", "Kit Management", "Reports", "Procurement List", "User Management", "Audit Logs", "Settings"])
         c.execute("INSERT INTO roles (name, permissions) VALUES (?, ?)", ('admin', all_perms))
-        
         asst_perms = json.dumps(["Dashboard", "Inventory", "Stock Operations", "Reports", "Procurement List"])
         c.execute("INSERT INTO roles (name, permissions) VALUES (?, ?)", ('assistant', asst_perms))
-        
-        # Teacher Role
         teach_perms = json.dumps(["Dashboard", "Inventory", "Stock Operations", "Kit Management", "Reports"])
         c.execute("INSERT INTO roles (name, permissions) VALUES (?, ?)", ('teacher', teach_perms))
-        
         conn.commit()
     else:
-        # Migration: Ensure Kit Management is in roles
+        # Check permissions
         c.execute("SELECT name, permissions FROM roles")
         roles = c.fetchall()
         for role in roles:
@@ -235,11 +248,6 @@ def init_db():
             if role[0] in ['admin', 'teacher'] and "Kit Management" not in perms:
                 perms.append("Kit Management")
                 c.execute("UPDATE roles SET permissions = ? WHERE name = ?", (json.dumps(perms), role[0]))
-        # Ensure teacher role exists if db existed but role didn't
-        c.execute("SELECT count(*) FROM roles WHERE name='teacher'")
-        if c.fetchone()[0] == 0:
-            teach_perms = json.dumps(["Dashboard", "Inventory", "Stock Operations", "Kit Management", "Reports"])
-            c.execute("INSERT INTO roles (name, permissions) VALUES (?, ?)", ('teacher', teach_perms))
         conn.commit()
 
     # Seed Users
@@ -418,6 +426,11 @@ def view_reports():
     for year in years:
         with st.expander(f"📂 Year: {year}", expanded=(year==max(years))):
             year_data = df[df['year'] == year]
+            
+            # FIX 2: Preview for Reports
+            st.write("👁️ **Preview Data (Annual)**")
+            st.dataframe(year_data.head(50), use_container_width=True, height=200)
+            
             buffer_annual = io.BytesIO()
             year_data.to_excel(buffer_annual, index=False, engine='openpyxl')
             buffer_annual.seek(0)
@@ -597,7 +610,7 @@ def view_inventory():
                     run_query("DELETE FROM categories WHERE name = ?", (del_cat,))
                     st.rerun()
 
-# --- KIT MANAGEMENT (NEW) ---
+# --- KIT MANAGEMENT (REVAMPED FIX 3 & 4) ---
 def view_kit_management():
     st.title("🧰 Kit Management")
     
@@ -626,80 +639,57 @@ def view_kit_management():
             st.write(""); st.write("")
             if st.button("Add to List"):
                 if item_sel:
-                    # Check current price for estimation
                     curr_price = df_inv[df_inv['name'] == item_sel]['price'].values[0]
                     st.session_state.kit_temp_items.append({"item": item_sel, "qty": qty_sel, "unit_price": curr_price})
         
-        # Show added items
         if st.session_state.kit_temp_items:
             temp_df = pd.DataFrame(st.session_state.kit_temp_items)
             temp_df['Total Cost'] = temp_df['qty'] * temp_df['unit_price']
             st.dataframe(temp_df, use_container_width=True)
-            
             total_kit_cost = temp_df['Total Cost'].sum()
             st.metric("Estimated Cost per Kit", f"₹{total_kit_cost:,.2f}")
             
             if st.button("💾 Save Kit Configuration", type="primary"):
                 if kit_name:
                     ref_no = generate_kit_ref()
-                    # Save Kit Header
                     run_query("INSERT INTO kits (kit_ref, name, description, created_by) VALUES (?, ?, ?, ?)", 
                               (ref_no, kit_name, kit_desc, st.session_state.user['name']))
-                    
-                    # Get Kit ID
-                    kit_id_res = run_query("SELECT id FROM kits WHERE kit_ref = ?", (ref_no,), fetch=True)
-                    kit_id = kit_id_res[0]['id']
-                    
-                    # Save Items
+                    kit_id = run_query("SELECT id FROM kits WHERE kit_ref = ?", (ref_no,), fetch=True)[0]['id']
                     for row in st.session_state.kit_temp_items:
                         run_query("INSERT INTO kit_items (kit_id, item_name, quantity) VALUES (?, ?, ?)", 
                                   (kit_id, row['item'], row['qty']))
-                    
                     log_activity("Kit Created", f"Created kit {kit_name} ({ref_no})")
                     st.session_state.kit_temp_items = []
-                    st.success(f"Kit Created! Ref: {ref_no}")
-                    time.sleep(1)
-                    st.rerun()
-                else:
-                    st.error("Kit Name is required")
-            
-            if st.button("Clear List"):
-                st.session_state.kit_temp_items = []
-                st.rerun()
+                    st.success(f"Kit Created! Ref: {ref_no}"); time.sleep(1); st.rerun()
+                else: st.error("Kit Name is required")
+            if st.button("Clear List"): st.session_state.kit_temp_items = []; st.rerun()
 
     # 2. MANAGE KITS
     with tab_manage:
         kits = run_query("SELECT * FROM kits", fetch=True)
-        if not kits:
-            st.info("No kits created yet.")
+        if not kits: st.info("No kits created yet.")
         else:
             for k in kits:
                 with st.expander(f"📦 {k['name']} ({k['kit_ref']})"):
                     st.write(f"**Description:** {k['description']}")
-                    # Get items
+                    st.write(f"**Currently Issued:** {k['in_circulation']}")
                     k_items = run_query("SELECT item_name, quantity FROM kit_items WHERE kit_id = ?", (k['id'],), fetch=True)
-                    
-                    # Calculate dynamic cost
                     k_df = pd.DataFrame(k_items)
-                    
-                    # Merge with current inventory price to get real-time cost
                     if not k_df.empty:
                         inv_prices = df_inv.set_index('name')['price'].to_dict()
                         k_df['Current Unit Price'] = k_df['item_name'].map(inv_prices).fillna(0)
                         k_df['Subtotal'] = k_df['quantity'] * k_df['Current Unit Price']
                         st.dataframe(k_df, use_container_width=True)
                         st.metric("Current Cost to Build", f"₹{k_df['Subtotal'].sum():,.2f}")
-                    
                     if st.button(f"Delete {k['kit_ref']}", key=f"del_kit_{k['id']}"):
                         run_query("DELETE FROM kit_items WHERE kit_id = ?", (k['id'],))
                         run_query("DELETE FROM kits WHERE id = ?", (k['id'],))
                         log_activity("Kit Deleted", f"Deleted kit {k['kit_ref']}")
                         st.rerun()
 
-    # 3. KIT OPERATIONS
+    # 3. KIT OPERATIONS (FIX 3 & 4)
     with tab_ops:
         st.subheader("Issue or Return Kits")
-        
         kit_opts = [f"{k['name']} ({k['kit_ref']})" for k in kits] if kits else []
         sel_kit_str = st.selectbox("Select Kit", kit_opts)
         
@@ -711,55 +701,57 @@ def view_kit_management():
             c1, c2 = st.columns(2)
             with c1:
                 st.markdown("#### 📤 Issue Kit (Stock Out)")
+                num_kits_issue = st.number_input("Number of Kits to Issue", min_value=1, value=1, key="iss_qty")
                 issue_note = st.text_input("Reason / Student Name", key="k_out_note")
-                if st.button("Issue Kit", type="primary"):
-                    # Check Inventory Levels
-                    possible = True
-                    missing = []
-                    
-                    # Get current inventory
+                
+                if st.button("Issue Kits", type="primary"):
+                    possible = True; missing = []
                     curr_inv = pd.read_sql_query("SELECT name, quantity FROM inventory", get_db_connection()).set_index('name')['quantity'].to_dict()
                     
+                    # Check Inventory for ALL kits
                     for i in kit_items:
-                        needed = i['quantity']
+                        needed = i['quantity'] * num_kits_issue
                         avail = curr_inv.get(i['item_name'], 0)
                         if avail < needed:
-                            possible = False
-                            missing.append(f"{i['item_name']} (Need {needed}, Have {avail})")
+                            possible = False; missing.append(f"{i['item_name']} (Need {needed}, Have {avail})")
                     
                     if possible:
                         for i in kit_items:
-                            run_query("UPDATE inventory SET quantity = quantity - ? WHERE name = ?", (i['quantity'], i['item_name']))
-                            # Log individual transaction
+                            deduct = i['quantity'] * num_kits_issue
+                            run_query("UPDATE inventory SET quantity = quantity - ? WHERE name = ?", (deduct, i['item_name']))
                             run_query("INSERT INTO transactions (item_name, type, quantity, user, notes) VALUES (?,?,?,?,?)",
-                                      (i['item_name'], 'out', i['quantity'], st.session_state.user['name'], f"Kit Issue: {kit_ref} - {issue_note}"))
+                                      (i['item_name'], 'out', deduct, st.session_state.user['name'], f"Kit Issue: {num_kits_issue}x {kit_ref} - {issue_note}"))
                         
-                        # Log Kit History
-                        run_query("INSERT INTO kit_history (kit_ref, action, user) VALUES (?, ?, ?)", (kit_ref, 'Issue', st.session_state.user['name']))
-                        st.success(f"Kit {kit_ref} issued successfully!")
-                        time.sleep(1)
-                        st.rerun()
-                    else:
-                        st.error(f"Cannot issue kit. Missing items: {', '.join(missing)}")
+                        run_query("UPDATE kits SET in_circulation = in_circulation + ? WHERE id = ?", (num_kits_issue, kit_data['id']))
+                        run_query("INSERT INTO kit_history (kit_ref, action, user, qty_changed) VALUES (?, ?, ?, ?)", (kit_ref, 'Issue', st.session_state.user['name'], num_kits_issue))
+                        st.success(f"Issued {num_kits_issue} kits successfully!")
+                        time.sleep(1); st.rerun()
+                    else: st.error(f"Cannot issue. Missing: {', '.join(missing)}")
 
             with c2:
                 st.markdown("#### 📥 Return Kit (Stock In)")
+                st.info(f"Kits currently issued: {kit_data['in_circulation']}")
+                num_kits_return = st.number_input("Number of Kits to Return", min_value=1, value=1, key="ret_qty")
                 return_note = st.text_input("Return Note", key="k_in_note")
-                if st.button("Return Kit"):
-                    for i in kit_items:
-                        run_query("UPDATE inventory SET quantity = quantity + ? WHERE name = ?", (i['quantity'], i['item_name']))
-                        run_query("INSERT INTO transactions (item_name, type, quantity, user, notes) VALUES (?,?,?,?,?)",
-                                  (i['item_name'], 'in', i['quantity'], st.session_state.user['name'], f"Kit Return: {kit_ref} - {return_note}"))
-                    
-                    run_query("INSERT INTO kit_history (kit_ref, action, user) VALUES (?, ?, ?)", (kit_ref, 'Return', st.session_state.user['name']))
-                    st.success("Kit returned to inventory.")
-                    time.sleep(1)
-                    st.rerun()
+                
+                if st.button("Return Kits"):
+                    if num_kits_return > kit_data['in_circulation']:
+                        st.error(f"Error: You are trying to return {num_kits_return} kits, but only {kit_data['in_circulation']} are issued.")
+                    else:
+                        for i in kit_items:
+                            add_back = i['quantity'] * num_kits_return
+                            run_query("UPDATE inventory SET quantity = quantity + ? WHERE name = ?", (add_back, i['item_name']))
+                            run_query("INSERT INTO transactions (item_name, type, quantity, user, notes) VALUES (?,?,?,?,?)",
+                                      (i['item_name'], 'in', add_back, st.session_state.user['name'], f"Kit Return: {num_kits_return}x {kit_ref} - {return_note}"))
+                        
+                        run_query("UPDATE kits SET in_circulation = in_circulation - ? WHERE id = ?", (num_kits_return, kit_data['id']))
+                        run_query("INSERT INTO kit_history (kit_ref, action, user, qty_changed) VALUES (?, ?, ?, ?)", (kit_ref, 'Return', st.session_state.user['name'], num_kits_return))
+                        st.success("Kits returned to inventory.")
+                        time.sleep(1); st.rerun()
 
-    # 4. HISTORY
     with tab_history:
         st.subheader("Kit Usage Log")
-        hist = pd.read_sql_query("SELECT timestamp, kit_ref, action, user FROM kit_history ORDER BY timestamp DESC", get_db_connection())
+        hist = pd.read_sql_query("SELECT timestamp, kit_ref, action, qty_changed, user FROM kit_history ORDER BY timestamp DESC", get_db_connection())
         st.dataframe(hist, use_container_width=True)
 
 # --- REVAMPED STOCK OPERATIONS (WEIGHTED AVG) ---
@@ -779,31 +771,20 @@ def view_stock_ops():
         with st.form("stock_in_form"):
             item_in = st.selectbox("Select Item", df['name'].tolist(), key="in_item")
             qty_in = st.number_input("Quantity to Add", min_value=1, value=1, key="in_qty")
-            # NEW: Price Input for WAC
             new_price = st.number_input("Unit Price of New Batch (₹)", min_value=0.0, value=0.0, step=1.0)
             notes_in = st.text_input("Notes (e.g., Purchase Order #)", key="in_notes")
             
             if st.form_submit_button("➕ Add Stock", use_container_width=True):
-                # Calculate Weighted Average Cost
                 curr_item = df[df['name'] == item_in].iloc[0]
-                curr_qty = curr_item['quantity']
-                curr_price = curr_item['price']
-                
-                # Formula: (OldVal + NewVal) / TotalQty
-                # Avoid division by zero if total qty is 0 (shouldn't happen here as we add)
+                curr_qty = curr_item['quantity']; curr_price = curr_item['price']
                 total_val = (curr_qty * curr_price) + (qty_in * new_price)
                 total_qty = curr_qty + qty_in
                 avg_price = total_val / total_qty if total_qty > 0 else 0
-                
                 run_query("UPDATE inventory SET quantity = ?, price = ? WHERE name = ?", (total_qty, avg_price, item_in))
-                
                 run_query("INSERT INTO transactions (item_name, type, quantity, user, notes) VALUES (?,?,?,?,?)", 
                           (item_in, 'in', qty_in, st.session_state.user['name'], notes_in))
-                
                 log_activity("Stock In", f"Added {qty_in} to {item_in} @ ₹{new_price}")
-                st.success(f"Added {qty_in}. New Avg Price: ₹{avg_price:.2f}")
-                time.sleep(1)
-                st.rerun()
+                st.success(f"Added {qty_in}. New Avg Price: ₹{avg_price:.2f}"); time.sleep(1); st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
 
     with col_out:
@@ -813,26 +794,21 @@ def view_stock_ops():
             item_out = st.selectbox("Select Item", df['name'].tolist(), key="out_item")
             qty_out = st.number_input("Quantity to Remove", min_value=1, value=1, key="out_qty")
             notes_out = st.text_input("Notes (e.g., Project Name)", key="out_notes")
-            
             if st.form_submit_button("➖ Remove Stock", use_container_width=True):
                 current_qty = df[df['name'] == item_out]['quantity'].values[0]
-                if qty_out > current_qty:
-                    st.error(f"Insufficient stock! Available: {current_qty}")
+                if qty_out > current_qty: st.error(f"Insufficient stock! Available: {current_qty}")
                 else:
                     run_query("UPDATE inventory SET quantity = quantity - ? WHERE name = ?", (qty_out, item_out))
                     run_query("INSERT INTO transactions (item_name, type, quantity, user, notes) VALUES (?,?,?,?,?)", 
                               (item_out, 'out', qty_out, st.session_state.user['name'], notes_out))
                     log_activity("Stock Out", f"Removed {qty_out} from {item_out}")
-                    st.success(f"Removed {qty_out} units from {item_out}")
-                    time.sleep(1)
-                    st.rerun()
+                    st.success(f"Removed {qty_out}"); time.sleep(1); st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("---")
     st.subheader("📋 Recent Stock Activity")
     recent_trans = pd.read_sql_query("SELECT timestamp, item_name, type, quantity, user, notes FROM transactions ORDER BY timestamp DESC LIMIT 10", get_db_connection())
-    if recent_trans.empty:
-        st.info("No transactions recorded yet.")
+    if recent_trans.empty: st.info("No transactions recorded yet.")
     else:
         for _, row in recent_trans.iterrows():
             icon = "📥" if row['type'] == 'in' else "📤"
@@ -868,16 +844,13 @@ def view_procurement():
                 <div class="step {'active' if step == 4 else ''}">4. Download</div>
             </div>
         """, unsafe_allow_html=True)
-        
         st.markdown("---")
         
         if step == 1:
             st.subheader("Step 1: Select Items")
             df = pd.read_sql_query("SELECT * FROM inventory WHERE quantity < min_stock", get_db_connection())
-            if df.empty:
-                st.success("✅ All items are well-stocked!"); return
+            if df.empty: st.success("✅ All items are well-stocked!"); return
             st.warning(f"⚠️ {len(df)} items are below minimum stock level.")
-            
             select_all = st.checkbox("Select All Items")
             selected = []
             for idx, row in df.iterrows():
@@ -895,7 +868,10 @@ def view_procurement():
                 if st.button("Proceed ➡️", type="primary", use_container_width=True):
                     if len(selected) > 0:
                         st.session_state.selected_items = selected
-                        st.session_state.item_justifications = {item['name']: "" for item in selected}
+                        # Initialize only if not present to avoid overwrite on back
+                        for item in selected:
+                            if item['name'] not in st.session_state.item_justifications:
+                                st.session_state.item_justifications[item['name']] = ""
                         st.session_state.procurement_step = 2; st.rerun()
                     else: st.error("Select at least one item.")
         
@@ -910,10 +886,12 @@ def view_procurement():
             with c2: default_link = st.text_input("Default Link (Optional)") if mode == "Online" else ""
             
             st.markdown("### 📝 Justification")
-            global_just = st.text_area("Common Justification", value=st.session_state.global_justification, key="global_just_input")
+            # FIX 1: Apply to all persistence
+            global_val = st.text_area("Common Justification", value=st.session_state.global_justification, key="g_just")
             if st.button("✅ Apply to All", type="secondary"):
-                st.session_state.global_justification = global_just
-                for item in selected_items: st.session_state.item_justifications[item['name']] = global_just
+                st.session_state.global_justification = global_val
+                for item in selected_items:
+                    st.session_state.item_justifications[item['name']] = global_val
                 st.rerun()
             
             item_details = []
@@ -922,9 +900,12 @@ def view_procurement():
                     c1, c2 = st.columns(2)
                     with c1: qty = st.number_input(f"Quantity", min_value=1, value=int(item['shortage']), key=f"qty_{idx}")
                     with c2: link = st.text_input("Link", value=default_link, key=f"link_{idx}") if mode == "Online" else "N/A"
+                    # Read from session state dictionary
                     curr_j = st.session_state.item_justifications.get(item['name'], "")
                     just = st.text_area("Justification", value=curr_j, key=f"just_{idx}", height=80)
+                    # Update back to session state manually to ensure it saves
                     st.session_state.item_justifications[item['name']] = just
+                    
                     item_details.append({'Item Name': item['name'], 'Category': item['category'], 'Current Stock': item['current_stock'], 'Min Stock': item['min_stock'], 'Quantity Requested': qty, 'Unit Price': item['price'], 'Estimated Cost': qty * item['price'], 'Justification': just, 'Mode': mode, 'Purchase Link': link})
             
             c1, c2, c3 = st.columns([1, 1, 1])
@@ -974,6 +955,7 @@ def view_procurement():
                 st.session_state.selected_items = []
                 st.session_state.procurement_details = {}
                 st.session_state.global_justification = ""
+                st.session_state.item_justifications = {}
                 st.rerun()
 
     with tab_history:
